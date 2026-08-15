@@ -1,0 +1,51 @@
+name: Signaler une anomalie
+description: Signaler un comportement reproductible de cec2info
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Merci de vérifier qu'aucune issue existante ne décrit déjà le problème.
+  - type: input
+    id: version
+    attributes:
+      label: Version de cec2info
+      placeholder: "3.3.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: Système
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Autre
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Étapes pour reproduire
+      description: Indiquez les commandes exactes et les options utilisées.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Résultat attendu
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Résultat observé
+      description: Ajoutez le message d'erreur complet en masquant les données sensibles.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexte complémentaire
+      description: Version de Python, outils Texinfo/TeX et rapport de génération utiles.

@@ -7,18 +7,32 @@ versionnage sémantique.
 
 ## [Non publié]
 
+## [3.4.0] - 2026-08-15
+
 ### Ajouté
 
 - reprises réseau avec délai progressif et écritures atomiques du cache ;
 - tests du CLI, des erreurs réseau, des pages dupliquées et cycliques, de
   l'extraction HTML et des outils système absents ;
-- analyse Ruff et seuil minimal de 95 % de couverture de branches dans la CI.
+- analyse Ruff et seuil minimal de 95 % de couverture de branches dans la CI ;
+- tests de compatibilité sous macOS et Windows ;
+- guide de contribution, code de conduite, formulaires d'issues et modèle de
+  pull request.
 
 ### Modifié
 
 - séparation de l'analyse des arguments et de l'exécution du convertisseur ;
 - découpage du téléchargement, de la découverte et de l'affectation des pages ;
-- version de l'agent HTTP issue des métadonnées du paquet.
+- version de l'agent HTTP issue des métadonnées du paquet ;
+- séparation du réseau, de l'analyse HTML, de la génération et du modèle dans
+  des modules spécialisés, avec maintien de l'interface publique historique.
+
+### Corrigé
+
+- construction des chemins d'URL avec des séparateurs POSIX sous Windows.
+- rejet des délais négatifs lors d'un appel direct à l'API de téléchargement.
+- appels aux compilateurs avec des exécutables statiques après contrôle de leur
+  présence, sans interprétation par un shell.
 
 ## [3.3.1] - 2026-08-15
 
@@ -61,5 +75,6 @@ versionnage sémantique.
 - génération rendue déterministe et validée avant la création des sorties ;
 - documentation de l'installation, de la CI et des rapports de génération.
 
+[3.4.0]: https://github.com/fmaillar/cec-info/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/fmaillar/cec-info/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/fmaillar/cec-info/releases/tag/v3.3.0

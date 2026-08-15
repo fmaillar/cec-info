@@ -287,7 +287,10 @@ class NavigationAndValidationTests(unittest.TestCase):
             ),
         }
 
-        with patch("cec2info.fetch", side_effect=lambda url, *_args, **_kwargs: pages[url]):
+        with patch(
+            "cec2info_parser.fetch",
+            side_effect=lambda url, *_args, **_kwargs: pages[url],
+        ):
             orphan_count = load_bodies(
                 roots,
                 "https://example.test/book/_INDEX.HTM",
@@ -306,7 +309,7 @@ class NavigationAndValidationTests(unittest.TestCase):
         duplicate = Entry(title="Entrée dupliquée", href="__P1.HTM", depth=1)
         page = b"<body>1 Contenu unique.</body>"
 
-        with patch("cec2info.fetch", return_value=page) as mocked_fetch:
+        with patch("cec2info_parser.fetch", return_value=page) as mocked_fetch:
             orphan_count = load_bodies(
                 [first, duplicate],
                 "https://example.test/book/_INDEX.HTM",
@@ -332,7 +335,7 @@ class NavigationAndValidationTests(unittest.TestCase):
         }
 
         with patch(
-            "cec2info.fetch",
+            "cec2info_parser.fetch",
             side_effect=lambda url, *_args, **_kwargs: pages[url],
         ) as mocked_fetch:
             orphan_count = load_bodies(
@@ -358,7 +361,7 @@ class FetchTests(unittest.TestCase):
             target = cache_dir / cache_filename(self.url)
             target.write_bytes(b"cached")
 
-            with patch("cec2info.urllib.request.urlopen") as urlopen:
+            with patch("cec2info_network.urllib.request.urlopen") as urlopen:
                 data = fetch(self.url, cache_dir, refresh=False, delay=0)
 
             self.assertEqual(data, b"cached")
@@ -371,7 +374,7 @@ class FetchTests(unittest.TestCase):
             target.write_bytes(b"")
 
             with patch(
-                "cec2info.urllib.request.urlopen",
+                "cec2info_network.urllib.request.urlopen",
                 return_value=io.BytesIO(b"<html>contenu</html>"),
             ):
                 data = fetch(self.url, cache_dir, refresh=False, delay=0)
@@ -384,10 +387,10 @@ class FetchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with (
                 patch(
-                    "cec2info.urllib.request.urlopen",
+                    "cec2info_network.urllib.request.urlopen",
                     side_effect=[URLError("temporaire"), io.BytesIO(b"ok")],
                 ) as urlopen,
-                patch("cec2info.time.sleep") as sleep,
+                patch("cec2info_network.time.sleep") as sleep,
             ):
                 data = fetch(
                     self.url,
@@ -407,10 +410,10 @@ class FetchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with (
                 patch(
-                    "cec2info.urllib.request.urlopen",
+                    "cec2info_network.urllib.request.urlopen",
                     side_effect=[error, io.BytesIO(b"ok")],
                 ),
-                patch("cec2info.time.sleep") as sleep,
+                patch("cec2info_network.time.sleep") as sleep,
             ):
                 data = fetch(
                     self.url,
@@ -428,7 +431,7 @@ class FetchTests(unittest.TestCase):
         error = HTTPError(self.url, 404, "introuvable", {}, None)
         with tempfile.TemporaryDirectory() as directory:
             with patch(
-                "cec2info.urllib.request.urlopen",
+                "cec2info_network.urllib.request.urlopen",
                 side_effect=error,
             ) as urlopen:
                 with self.assertRaisesRegex(RuntimeError, "1 tentative"):
@@ -449,7 +452,7 @@ class FetchTests(unittest.TestCase):
             target.write_bytes(b"ancien contenu")
 
             with patch(
-                "cec2info.urllib.request.urlopen",
+                "cec2info_network.urllib.request.urlopen",
                 return_value=io.BytesIO(b""),
             ):
                 with self.assertRaisesRegex(RuntimeError, "réponse vide"):
@@ -466,6 +469,8 @@ class FetchTests(unittest.TestCase):
     def test_invalid_retry_parameters_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             cache_dir = Path(directory)
+            with self.assertRaisesRegex(ValueError, "delay"):
+                fetch(self.url, cache_dir, False, -1)
             with self.assertRaisesRegex(ValueError, "timeout"):
                 fetch(self.url, cache_dir, False, 0, timeout=0)
             with self.assertRaisesRegex(ValueError, "retries"):
@@ -713,7 +718,7 @@ class MissingToolTests(unittest.TestCase):
             texi_path = base / "test.texi"
             texi_path.write_text("@bye\n", encoding="utf-8")
 
-            with patch("cec2info.shutil.which", return_value=None):
+            with patch("cec2info_output.shutil.which", return_value=None):
                 with self.assertRaisesRegex(RuntimeError, "makeinfo"):
                     compile_info(texi_path, base / "test.info")
                 with self.assertRaisesRegex(RuntimeError, "texi2dvi"):

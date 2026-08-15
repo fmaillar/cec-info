@@ -1,0 +1,31 @@
+name: Proposer une amélioration
+description: Décrire une fonctionnalité ou une amélioration ciblée
+title: "[Évolution] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: Besoin
+      description: Quel problème concret cette évolution résoudrait-elle ?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Solution proposée
+      description: Décrivez le comportement attendu, sans imposer une refonte inutile.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Solutions alternatives
+      description: Indiquez les contournements ou solutions déjà essayés.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Vérifications
+      options:
+        - label: Cette proposition concerne le convertisseur et non le contenu éditorial du Vatican.
+          required: true

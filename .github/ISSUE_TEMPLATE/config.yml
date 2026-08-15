@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions d'utilisation
+    url: https://github.com/fmaillar/cec-info/discussions
+    about: Utilisez les discussions pour les questions qui ne sont ni une anomalie ni une évolution.
