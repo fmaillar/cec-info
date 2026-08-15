@@ -8,7 +8,8 @@ assignees: ""
 
 ## Contexte
 
-Décrivez brièvement le besoin ou le problème concernant `cec2info`.
+Décrivez brièvement le besoin ou le problème concernant le convertisseur
+`cec2info` de ce dépôt.
 
 ## Détails
 
