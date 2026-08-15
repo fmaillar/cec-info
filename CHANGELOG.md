@@ -7,6 +7,8 @@ Versioning.
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-08-15
+
 ### Added
 
 - German, Italian, Latin, Portuguese, and Spanish language profiles, in

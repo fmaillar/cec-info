@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cec2info"
-version = "3.5.0"
+version = "3.6.0"
 description = "Convert the Vatican Catechism to GNU Info, PDF, and EPUB 3"
 readme = "README.md"
 license = "GPL-3.0-or-later"
