@@ -1,9 +1,9 @@
-# Contribuer à cec2info
+# Contributing to cec2info
 
-Merci de contribuer à `cec2info`. Les corrections ciblées, accompagnées de
-tests et compatibles avec Python 3.10 ou ultérieur, sont privilégiées.
+Thank you for contributing to `cec2info`. Focused changes with tests and
+compatibility with Python 3.10 or later are preferred.
 
-## Préparer l'environnement
+## Preparing the environment
 
 ```sh
 git clone https://github.com/fmaillar/cec-info.git
@@ -13,31 +13,29 @@ python3 -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
-Sous Windows PowerShell, activez l'environnement avec :
+On Windows PowerShell, activate the environment with:
 
 ```powershell
 .venv\Scripts\Activate.ps1
 ```
 
-Les outils Texinfo et TeX sont facultatifs pour les tests Python, mais requis
-pour valider réellement les sorties Info, PDF et EPUB.
+Texinfo and TeX tools are optional for Python-only tests, but required to
+validate actual Info, PDF, and EPUB output.
 
-## Proposer une modification
+## Proposing a change
 
-1. Ouvrez d'abord une issue pour une évolution importante.
-2. Limitez chaque commit à une modification cohérente.
-3. Ajoutez ou adaptez les tests correspondant au comportement modifié.
-4. Exécutez les contrôles locaux :
+1. Open an issue first for a significant feature.
+2. Keep each commit focused on one coherent change.
+3. Add or update tests for changed behavior.
+4. Run the local checks:
 
    ```sh
    make check
    python -m build
    ```
 
-5. Ouvrez une pull request en décrivant le problème, la solution et les
-   vérifications effectuées.
+5. Open a pull request describing the problem, solution, and validation.
 
-Ne commitez ni le cache du Vatican, ni les documents générés, ni les
-environnements virtuels.
-En contribuant, vous acceptez que votre contribution soit distribuée sous la
-licence GPL-3.0-or-later du projet.
+Do not commit the Vatican cache, generated documents, or virtual environments.
+By contributing, you agree that your contribution is distributed under the
+GPL-3.0-or-later license.

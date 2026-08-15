@@ -6,9 +6,9 @@
 [![Release](https://img.shields.io/github/v/release/fmaillar/cec-info)](https://github.com/fmaillar/cec-info/releases/latest)
 [![GPL-3.0-or-later license](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Converts the French edition of the **Catechism of the Catholic Church**
-published by the Vatican (IntraText) to **GNU Texinfo / Info**, PDF, and
-EPUB 3. The Info output can be read directly in Emacs.
+Converts the French or English edition of the **Catechism of the Catholic
+Church** published by the Vatican (IntraText) to **GNU Texinfo / Info**, PDF,
+and EPUB 3. The Info output can be read directly in Emacs.
 
 ## Dependencies (Debian)
 
@@ -36,13 +36,23 @@ cec2info --help
 make
 ```
 
+French is the default source language. Select the official English corpus with:
+
+```sh
+make LANGUAGE=en
+# or
+cec2info --language en --compile --pdf --epub
+```
+
+Supported language codes are `fr` and `en`. `--language` selects the official
+Vatican URL, navigation labels, structural headings, generated metadata, and
+default file names. `--index-url` can still override the selected source URL.
+
 The script creates:
 
 - `.cec-cache/`: local cache for downloaded HTML pages;
-- `catechisme.texi`: Texinfo source;
-- `catechisme.info`: GNU Info manual;
-- `catechisme.pdf`: PDF edition;
-- `catechisme.epub`: EPUB 3 edition;
+- `catechisme.*`: French Texinfo, Info, PDF, and EPUB outputs;
+- `catechism.*`: corresponding English outputs;
 - `generation-report.json`: machine-readable generation report.
 
 To generate a single format:
@@ -58,9 +68,9 @@ Run the local test suite with `make test` or all quality checks with
 
 Before compiling the final formats, the generator verifies that paragraphs 1
 through 2865 are present exactly once. IntraText pages missing from the table
-of contents are recovered automatically by following the `Next` links. For a
-different corpus, adjust the limit with `--expected-last-paragraph`, or pass
-`0` to disable this check.
+of contents are recovered automatically by following localized next-page
+links. For a different corpus, adjust the limit with
+`--expected-last-paragraph`, or pass `0` to disable this check.
 
 A human-readable report is always printed at the end. To also write a JSON
 report with the installed command:
@@ -69,8 +79,9 @@ report with the installed command:
 cec2info --compile --pdf --epub --report-json generation-report.json
 ```
 
-The JSON report contains the source URL, entry count, linked and orphan pages,
-paragraph coverage, and the path and size of every generated file.
+The JSON report contains the language, source URL, entry count, linked and
+orphan pages, paragraph coverage, and the path and size of every generated
+file.
 
 ## Architecture
 
@@ -78,6 +89,7 @@ paragraph coverage, and the path and size of every generated file.
 internal responsibilities are split without changing how the tool is used:
 
 - `cec2info_network.py`: downloads, retries, and atomic cache writes;
+- `cec2info_language.py`: French and English source/output profiles;
 - `cec2info_parser.py`: IntraText table-of-contents and HTML parsing;
 - `cec2info_output.py`: Texinfo generation, validation, reports, and compilation;
 - `cec2info_model.py`: document tree and shared normalization.
@@ -104,9 +116,10 @@ actually compiles the Info, PDF, and EPUB outputs. The other platforms run the
 Python tests and skip compilation tests when Texinfo/TeX tools are unavailable.
 Locally, `make check` reproduces the Python quality checks.
 
-A small local HTML corpus also exercises the deterministic integration chain:
-table of contents, orphan page, paragraphs, Texinfo, and JSON report. CI
-therefore does not depend on the network to detect integration regressions.
+Small French and English HTML corpora also exercise the deterministic
+integration chain: table of contents, orphan page, paragraphs, localized
+Texinfo, and JSON report. CI therefore does not depend on the network to detect
+integration regressions.
 
 Run progressive static type checking separately with `make typecheck`.
 
@@ -145,7 +158,7 @@ If Emacs does not already know this directory:
              (expand-file-name "~/.local/share/info/"))
 ```
 
-Then use `M-x info`, followed by `m Catéchisme`.
+Then use `M-x info`, followed by `m Catéchisme` or `m Catechism`.
 
 ## Navigation
 

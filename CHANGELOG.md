@@ -1,103 +1,114 @@
-# Journal des modifications
+# Changelog
 
-Les changements notables du projet sont documentés dans ce fichier.
+All notable project changes are documented in this file.
 
-Le format suit les principes de *Keep a Changelog* et les versions suivent le
-versionnage sémantique.
+The format follows *Keep a Changelog*, and versions follow Semantic
+Versioning.
 
-## [Non publié]
+## [Unreleased]
 
-### Ajouté
+### Added
 
-- README anglais utilisé comme présentation principale sur GitHub et PyPI,
-  avec conservation de la documentation française dans `README.fr.md`.
-- liens du projet, des issues et du journal des modifications dans les
-  métadonnées du paquet.
+- French and English language profiles selecting the official Vatican source,
+  IntraText navigation labels, structural headings, generated metadata, and
+  output file names.
+- `--language {fr,en}` CLI option and `LANGUAGE` Make variable.
+- Deterministic English integration corpus covering localized parsing,
+  orphan-page discovery, Texinfo generation, and JSON reporting.
+- English README used as the main GitHub and PyPI presentation while retaining
+  the complete French documentation in `README.fr.md`.
+- package metadata links for the repository, issues, and changelog.
 
-### Modifié
+### Changed
 
-- description courte du paquet traduite en anglais pour améliorer sa
-  découvrabilité internationale.
-- commentaires et docstrings du code source traduits en anglais, sans modifier
-  les messages de l'interface française.
+- common CLI messages, reports, errors, community files, comments, and
+  docstrings are now in English.
+- the JSON generation report now records the selected language.
+- distribution size units now use the language-neutral `B`, `KiB`, `MiB`, and
+  `GiB` symbols.
+- the short package description is in English for international discovery.
+
+### Fixed
+
+- HTTPS canonicalization for absolute HTTP links in the English IntraText
+  corpus, preventing linked pages from being treated as orphan pages.
+- exclusion of IntraText footnote blocks and Bible references from CCC
+  paragraph indexing.
+- recovery of a paragraph number merged into malformed English source HTML.
 
 ## [3.5.0] - 2026-08-15
 
-### Ajouté
+### Added
 
-- contrôle statique progressif des types avec mypy sur tous les modules.
-- mini-corpus IntraText local et test d'intégration déterministe de la chaîne
-  complète jusqu'au rapport JSON.
-- politique de sécurité et canal GitHub de signalement privé des vulnérabilités.
-- épinglage par SHA des actions GitHub, avec suivi hebdomadaire par Dependabot.
+- progressive static type checking with mypy across all modules.
+- local IntraText mini-corpus and deterministic integration test through JSON
+  report generation.
+- security policy and GitHub private vulnerability reporting channel.
+- full-SHA GitHub Action pinning with weekly Dependabot monitoring.
 
 ## [3.4.0] - 2026-08-15
 
-### Ajouté
+### Added
 
-- reprises réseau avec délai progressif et écritures atomiques du cache ;
-- tests du CLI, des erreurs réseau, des pages dupliquées et cycliques, de
-  l'extraction HTML et des outils système absents ;
-- analyse Ruff et seuil minimal de 95 % de couverture de branches dans la CI ;
-- tests de compatibilité sous macOS et Windows ;
-- guide de contribution, code de conduite, formulaires d'issues et modèle de
-  pull request.
+- network retries with progressive backoff and atomic cache writes.
+- tests for the CLI, network errors, duplicate and cyclic pages, HTML
+  extraction, and missing system tools.
+- Ruff analysis and a minimum 95% branch-coverage threshold in CI.
+- compatibility tests on macOS and Windows.
+- contribution guide, code of conduct, issue forms, and pull request template.
 
-### Modifié
+### Changed
 
-- séparation de l'analyse des arguments et de l'exécution du convertisseur ;
-- découpage du téléchargement, de la découverte et de l'affectation des pages ;
-- version de l'agent HTTP issue des métadonnées du paquet ;
-- séparation du réseau, de l'analyse HTML, de la génération et du modèle dans
-  des modules spécialisés, avec maintien de l'interface publique historique.
+- separated argument parsing from converter execution.
+- split downloading, discovery, and page assignment responsibilities.
+- derive the HTTP agent version from package metadata.
+- split networking, HTML parsing, output generation, and the data model into
+  focused modules while preserving the historical public interface.
 
-### Corrigé
+### Fixed
 
-- construction des chemins d'URL avec des séparateurs POSIX sous Windows.
-- rejet des délais négatifs lors d'un appel direct à l'API de téléchargement.
-- appels aux compilateurs avec des exécutables statiques après contrôle de leur
-  présence, sans interprétation par un shell.
+- use POSIX URL path separators on Windows.
+- reject negative delays in direct download API calls.
+- invoke verified compiler executables without shell interpretation.
 
 ## [3.3.1] - 2026-08-15
 
-### Ajouté
+### Added
 
-- publication automatique des GitHub Releases à partir des tags `vX.Y.Z` ;
-- construction automatique du wheel et du paquet source ;
-- préparation de la publication PyPI sans secret avec Trusted Publishing ;
-- mises à jour hebdomadaires Dependabot pour Python et GitHub Actions ;
-- badges CI, release et licence dans le README.
+- automatic GitHub Releases from `vX.Y.Z` tags.
+- automatic wheel and source-distribution builds.
+- secretless PyPI Trusted Publishing setup.
+- weekly Dependabot updates for Python and GitHub Actions.
+- CI, release, and license badges in the README.
 
-### Modifié
+### Changed
 
-- suppression des doubles exécutions CI sur les branches de pull request ;
-- annulation automatique d'une ancienne CI lorsqu'un nouveau commit arrive ;
-- métadonnées de licence migrées vers l'expression SPDX
-  `GPL-3.0-or-later`.
+- avoid duplicate CI runs for pull request branches.
+- cancel obsolete CI runs when a newer commit starts.
+- migrate license metadata to the `GPL-3.0-or-later` SPDX expression.
 
 ## [3.3.0] - 2026-08-15
 
-### Ajouté
+### Added
 
-- génération complète des formats GNU Info, PDF et EPUB 3 ;
-- commande installable `cec2info` et métadonnées `pyproject.toml` ;
-- rapports de génération lisible et JSON ;
-- tests de compilation réels pour les trois formats ;
-- intégration continue sur Python 3.10 et 3.13 ;
-- licence GNU GPL version 3 ou ultérieure pour le convertisseur.
+- complete GNU Info, PDF, and EPUB 3 generation.
+- installable `cec2info` command and `pyproject.toml` metadata.
+- human-readable and JSON generation reports.
+- actual compilation tests for all three formats.
+- continuous integration on Python 3.10 and 3.13.
+- GNU GPL version 3 or later license for the converter.
 
-### Corrigé
+### Fixed
 
-- conservation unique de tous les paragraphes numérotés de 1 à 2865 ;
-- récupération des pages orphelines absentes de la navigation principale ;
-- séparation des caches lorsque la source utilisée n'est pas la source
-  officielle ;
-- dépendance `Archive::Zip` nécessaire à la génération EPUB dans la CI.
+- retain every paragraph from 1 through 2865 exactly once.
+- recover orphan pages missing from the main navigation.
+- separate caches for non-official source URLs.
+- install the `Archive::Zip` dependency required for EPUB generation in CI.
 
-### Modifié
+### Changed
 
-- génération rendue déterministe et validée avant la création des sorties ;
-- documentation de l'installation, de la CI et des rapports de génération.
+- make generation deterministic and validate it before creating output.
+- document installation, CI, and generation reports.
 
 [3.5.0]: https://github.com/fmaillar/cec-info/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/fmaillar/cec-info/compare/v3.3.1...v3.4.0

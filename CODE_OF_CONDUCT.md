@@ -1,30 +1,29 @@
-# Code de conduite
+# Code of conduct
 
-## Engagement
+## Our commitment
 
-Les personnes participant au projet s'engagent à maintenir un espace
-accueillant, respectueux et exempt de harcèlement, quelle que soit leur
-expérience, leur identité, leur origine, leur religion, leur handicap ou leur
-point de vue.
+Project participants commit to maintaining a welcoming, respectful, and
+harassment-free space regardless of experience, identity, origin, religion,
+disability, or point of view.
 
-## Comportements attendus
+## Expected behavior
 
-- communiquer de manière constructive et factuelle ;
-- accueillir les retours et reconnaître les erreurs ;
-- respecter les personnes, leurs limites et leur vie privée ;
-- privilégier l'intérêt du projet et de sa communauté.
+- Communicate constructively and factually.
+- Welcome feedback and acknowledge mistakes.
+- Respect people, their boundaries, and their privacy.
+- Act in the best interests of the project and its community.
 
-Les insultes, menaces, attaques personnelles, discriminations, avances non
-sollicitées, divulgations d'informations privées et toute forme de harcèlement
-ne sont pas acceptées.
+Insults, threats, personal attacks, discrimination, unsolicited advances,
+disclosure of private information, and any form of harassment are not
+accepted.
 
-## Application
+## Enforcement
 
-Les responsables peuvent modifier ou supprimer une contribution et suspendre
-une personne dont le comportement enfreint ces règles. Un incident peut être
-signalé au responsable du dépôt par les moyens de contact indiqués sur le
-[profil GitHub de fmaillar](https://github.com/fmaillar). Les signalements
-seront examinés de manière impartiale et aussi confidentielle que possible.
+Maintainers may edit or remove a contribution and suspend anyone whose
+behavior violates these rules. Report incidents to the repository maintainer
+through the contact methods on the
+[fmaillar GitHub profile](https://github.com/fmaillar). Reports will be
+reviewed impartially and kept as confidential as reasonably possible.
 
-Ce code s'applique aux espaces du projet ainsi qu'aux échanges publics où une
-personne représente officiellement le projet.
+This code applies to project spaces and public interactions where someone
+officially represents the project.

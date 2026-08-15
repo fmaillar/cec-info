@@ -1,16 +1,16 @@
-## Objet
+## Purpose
 
-Décrivez le problème traité et la solution retenue.
+Describe the problem and the chosen solution.
 
-## Vérifications
+## Checks
 
-- [ ] Les tests existants passent.
-- [ ] Les nouveaux comportements sont testés.
-- [ ] Ruff ne signale aucune erreur.
-- [ ] La documentation est mise à jour si nécessaire.
-- [ ] Aucun cache ni document généré n'est inclus.
+- [ ] Existing tests pass.
+- [ ] New behavior is tested.
+- [ ] Ruff reports no errors.
+- [ ] Documentation is updated when needed.
+- [ ] No cache or generated document is included.
 
 ## Notes
 
-Indiquez ici les limites, choix techniques ou vérifications manuelles utiles à
-la revue.
+Document any limitations, technical decisions, or manual checks useful for
+review.
