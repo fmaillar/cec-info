@@ -30,6 +30,8 @@ versionnage sémantique.
 ### Corrigé
 
 - construction des chemins d'URL avec des séparateurs POSIX sous Windows.
+- appels aux compilateurs avec des exécutables statiques après contrôle de leur
+  présence, sans interprétation par un shell.
 
 ## [3.3.1] - 2026-08-15
 

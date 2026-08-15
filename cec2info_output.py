@@ -354,24 +354,22 @@ def emit_generation_report(
 
 
 def compile_info(texi_path: Path, info_path: Path) -> None:
-    makeinfo = shutil.which("makeinfo")
-    if makeinfo is None:
+    if shutil.which("makeinfo") is None:
         raise RuntimeError("makeinfo est introuvable. Installez le paquet Debian 'texinfo'.")
     info_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        [makeinfo, "--no-split", "--output", str(info_path), str(texi_path)],
+        ["makeinfo", "--no-split", "--output", str(info_path), str(texi_path)],
         check=True,
     )
 
 
 def compile_pdf(texi_path: Path, pdf_path: Path) -> None:
-    texi2dvi = shutil.which("texi2dvi")
-    if texi2dvi is None:
+    if shutil.which("texi2dvi") is None:
         raise RuntimeError("texi2dvi est introuvable. Installez Texinfo/TeX.")
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
-            texi2dvi,
+            "texi2dvi",
             "--batch",
             "--build=clean",
             "--dvipdf",
@@ -385,11 +383,10 @@ def compile_pdf(texi_path: Path, pdf_path: Path) -> None:
 
 
 def compile_epub(texi_path: Path, epub_path: Path) -> None:
-    makeinfo = shutil.which("makeinfo")
-    if makeinfo is None:
+    if shutil.which("makeinfo") is None:
         raise RuntimeError("makeinfo est introuvable. Installez le paquet Debian 'texinfo'.")
     epub_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        [makeinfo, "--epub3", "--output", str(epub_path), str(texi_path)],
+        ["makeinfo", "--epub3", "--output", str(epub_path), str(texi_path)],
         check=True,
     )
