@@ -11,8 +11,11 @@ from unittest.mock import patch
 
 from cec2info import (
     Entry,
+    USER_AGENT,
+    VERSION,
     assign_nodes,
     body_to_texinfo,
+    build_parser,
     build_generation_report,
     cache_filename,
     compile_epub,
@@ -22,9 +25,11 @@ from cec2info import (
     fetch,
     flatten_entries,
     load_bodies,
+    main,
     next_page_url,
     parse_index,
     render_texinfo,
+    run,
     validate_paragraph_indexes,
 )
 
@@ -284,6 +289,87 @@ class GenerationReportTests(unittest.TestCase):
             saved = json.loads(json_path.read_text(encoding="utf-8"))
             self.assertEqual(saved["paragraphs"]["unique"], 2)
             self.assertEqual(saved["outputs"]["info"]["bytes"], 14)
+
+
+class CliTests(unittest.TestCase):
+    def test_user_agent_uses_package_version(self) -> None:
+        self.assertIn(f"cec2info/{VERSION}", USER_AGENT)
+
+    def test_parser_accepts_all_output_formats(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "--compile",
+                "--info",
+                "manuel.info",
+                "--pdf",
+                "--pdf-output",
+                "manuel.pdf",
+                "--epub",
+                "--epub-output",
+                "manuel.epub",
+                "--expected-last-paragraph",
+                "0",
+            ]
+        )
+
+        self.assertTrue(args.compile)
+        self.assertEqual(args.info, Path("manuel.info"))
+        self.assertTrue(args.pdf)
+        self.assertEqual(args.pdf_output, Path("manuel.pdf"))
+        self.assertTrue(args.epub)
+        self.assertEqual(args.epub_output, Path("manuel.epub"))
+        self.assertEqual(args.expected_last_paragraph, 0)
+
+    def test_parser_rejects_negative_delay(self) -> None:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+            build_parser().parse_args(["--delay", "-1"])
+        self.assertIn("positive ou nulle", stderr.getvalue())
+
+    def test_main_reports_expected_error_without_traceback(self) -> None:
+        stderr = io.StringIO()
+        with (
+            patch("cec2info.run", side_effect=RuntimeError("échec contrôlé")),
+            contextlib.redirect_stderr(stderr),
+        ):
+            status = main([])
+
+        self.assertEqual(status, 1)
+        self.assertIn("Erreur: échec contrôlé", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_run_writes_texinfo_and_report(self) -> None:
+        items = "".join(
+            f'<li><a href="__P{i}.HTM">Entrée {i}</a></li>'
+            for i in range(1, 21)
+        )
+        index_data = f"<html><body><ul>{items}</ul></body></html>".encode()
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            args = build_parser().parse_args(
+                [
+                    "--cache-dir",
+                    str(base / "cache"),
+                    "--output",
+                    str(base / "book.texi"),
+                    "--expected-last-paragraph",
+                    "0",
+                    "--report-json",
+                    str(base / "report.json"),
+                ]
+            )
+            with (
+                patch("cec2info.fetch", return_value=index_data),
+                patch("cec2info.load_bodies", return_value=0),
+            ):
+                status = run(args)
+
+            self.assertEqual(status, 0)
+            self.assertIn("@node Top", (base / "book.texi").read_text())
+            report = json.loads((base / "report.json").read_text())
+            self.assertEqual(report["entries"], 20)
+            self.assertEqual(report["pages"]["linked"], 20)
 
 
 @unittest.skipUnless(

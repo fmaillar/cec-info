@@ -33,13 +33,19 @@ import urllib.parse
 import urllib.request
 import unicodedata
 from dataclasses import dataclass, field
+from importlib import metadata
 from pathlib import Path
 from typing import Iterable
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 DEFAULT_INDEX = "https://www.vatican.va/archive/FRA0013/_INDEX.HTM"
-USER_AGENT = "cec2info/3.3 (+GNU Info + TeX structured conversion)"
+try:
+    VERSION = metadata.version("cec2info")
+except metadata.PackageNotFoundError:
+    VERSION = "development"
+
+USER_AGENT = f"cec2info/{VERSION} (+GNU Info + TeX structured conversion)"
 PARA_RE = re.compile(r'^\s*(\d{1,4})(?:\s+|(?=["«]))(.+)$')
 SPACE_RE = re.compile(r"[ \t\xa0]+")
 MULTIBLANK_RE = re.compile(r"\n[ \t]*\n(?:[ \t]*\n)+")
@@ -960,10 +966,25 @@ def compile_epub(texi_path: Path, epub_path: Path) -> None:
     )
 
 
-def main() -> int:
+def nonnegative_float(value: str) -> float:
+    result = float(value)
+    if result < 0:
+        raise argparse.ArgumentTypeError("la valeur doit être positive ou nulle")
+    return result
+
+
+def nonnegative_int(value: str) -> int:
+    result = int(value)
+    if result < 0:
+        raise argparse.ArgumentTypeError("la valeur doit être positive ou nulle")
+    return result
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Convertit le Catéchisme officiel du Vatican en GNU Texinfo/Info."
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     parser.add_argument("--index-url", default=DEFAULT_INDEX)
     parser.add_argument("--cache-dir", type=Path, default=Path(".cec-cache"))
     parser.add_argument("-o", "--output", type=Path, default=Path("catechisme.texi"))
@@ -995,13 +1016,13 @@ def main() -> int:
     parser.add_argument("--refresh", action="store_true", help="retélécharge les pages même si elles sont en cache")
     parser.add_argument(
         "--delay",
-        type=float,
+        type=nonnegative_float,
         default=0.05,
         help="pause entre téléchargements (secondes, défaut: 0.05)",
     )
     parser.add_argument(
         "--expected-last-paragraph",
-        type=int,
+        type=nonnegative_int,
         default=2865,
         help="dernier paragraphe attendu pour la validation (0 pour désactiver)",
     )
@@ -1010,18 +1031,17 @@ def main() -> int:
         type=Path,
         help="écrit aussi le rapport de génération au format JSON",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def run(args: argparse.Namespace) -> int:
 
     eprint(f"Téléchargement du sommaire : {args.index_url}")
     index_data = fetch(args.index_url, args.cache_dir, refresh=args.refresh, delay=args.delay)
     roots = parse_index(index_data)
     entries = assign_nodes(roots)
     eprint(f"{len(entries)} entrées de sommaire détectées.")
-    linked_pages = sum(
-        clean_page_url(args.index_url, entry.href) is not None
-        for entry in entries
-        if entry.href
-    )
+    linked_pages = len(downloadable_entries(entries, args.index_url))
     orphan_pages = load_bodies(
         roots,
         args.index_url,
@@ -1062,6 +1082,16 @@ def main() -> int:
     )
     emit_generation_report(report, args.report_json)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return run(args)
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+        eprint(f"Erreur: {exc}")
+        return 1
 
 
 if __name__ == "__main__":
