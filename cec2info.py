@@ -136,6 +136,8 @@ def parse_index(data: bytes) -> list[Entry]:
         for li in direct_items:
             title = direct_li_title(li)
             if not title:
+                for nested in li.find_all(["ul", "ol"], recursive=False):
+                    walk(nested, parent, depth)
                 continue
             entry = Entry(
                 title=title,
@@ -282,6 +284,8 @@ def fetch(
 
 
 def text_regions_from_html(data: bytes) -> list[str]:
+    if not data.strip():
+        return []
     soup = BeautifulSoup(data, "html.parser")
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
@@ -350,18 +354,6 @@ def extract_main_text(data: bytes) -> str:
             continue
         lines.append(stripped)
     return normalize_text("\n".join(lines))
-
-
-def looks_like_subheading(line: str, next_line: str | None) -> bool:
-    if not line or len(line) > 100:
-        return False
-    if PARA_RE.match(line):
-        return False
-    if line[-1:] in ".;:!?»":
-        return False
-    if next_line and PARA_RE.match(next_line):
-        return True
-    return False
 
 
 def heading_key(text: str) -> str:
@@ -464,15 +456,6 @@ CHAPTER_RE = re.compile(r"^CHAPITRE\b", re.IGNORECASE)
 ARTICLE_RE = re.compile(r"^ARTICLE\s+\d+\b", re.IGNORECASE)
 PARAGRAPH_RE = re.compile(r"^PARAGRAPHE\s+\d+\b", re.IGNORECASE)
 ROMAN_RE = re.compile(r"^[IVXLCDM]+[.]\s+", re.IGNORECASE)
-
-
-def has_ancestor_matching(entry: Entry, pattern: re.Pattern[str]) -> bool:
-    cur = entry.parent
-    while cur is not None:
-        if pattern.search(cur.title.strip()):
-            return True
-        cur = cur.parent
-    return False
 
 
 def tex_semantic_level(title: str) -> int | None:
