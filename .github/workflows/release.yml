@@ -51,3 +51,33 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag --title "cec2info ${GITHUB_REF_NAME#v}"
           fi
+
+  pypi:
+    if: vars.PYPI_PUBLISH == 'true'
+    needs: release
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/cec2info
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Build distributions
+        run: |
+          python -m pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
