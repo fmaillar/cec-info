@@ -1,1 +1,2 @@
+include README.fr.md
 recursive-include tests/fixtures *.html *.json

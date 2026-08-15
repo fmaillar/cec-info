@@ -7,6 +7,18 @@ versionnage sémantique.
 
 ## [Non publié]
 
+### Ajouté
+
+- README anglais utilisé comme présentation principale sur GitHub et PyPI,
+  avec conservation de la documentation française dans `README.fr.md`.
+- liens du projet, des issues et du journal des modifications dans les
+  métadonnées du paquet.
+
+### Modifié
+
+- description courte du paquet traduite en anglais pour améliorer sa
+  découvrabilité internationale.
+
 ## [3.5.0] - 2026-08-15
 
 ### Ajouté
