@@ -8,6 +8,7 @@ from typing import Iterable
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
+from cec2info_language import DEFAULT_LANGUAGE, get_language_profile
 from cec2info_model import (
     Entry,
     entry_path_titles,
@@ -15,7 +16,7 @@ from cec2info_model import (
     normalize_text,
 )
 from cec2info_network import clean_page_url, fetch
-from cec2info_output import body_to_texinfo
+from cec2info_output import body_to_texinfo, is_biblical_reference
 
 
 def eprint(*args: object) -> None:
@@ -49,7 +50,7 @@ def parse_index(data: bytes) -> list[Entry]:
     soup = BeautifulSoup(data, "html.parser")
     lists = soup.find_all(["ul", "ol"])
     if not lists:
-        raise RuntimeError("Aucune liste trouvée dans le sommaire Vatican.")
+        raise RuntimeError("No list was found in the Vatican table of contents.")
 
     root_list = max(lists, key=lambda tag: len(tag.find_all("li")))
     roots: list[Entry] = []
@@ -85,8 +86,8 @@ def parse_index(data: bytes) -> list[Entry]:
     walk(root_list, None, 1)
     if len(list(flatten_entries(roots))) < 20:
         raise RuntimeError(
-            "Le sommaire détecté semble anormalement petit ; "
-            "la structure HTML du Vatican a peut-être changé."
+            "The detected table of contents looks unusually small; "
+            "the Vatican HTML structure may have changed."
         )
     return roots
 
@@ -99,8 +100,10 @@ def text_regions_from_html(data: bytes) -> list[str]:
         tag.decompose()
 
     marker = "<<<CEC-HR>>>"
+    footnote_marker = "<<<CEC-FOOTNOTES>>>"
     for horizontal_rule in soup.find_all("hr"):
-        horizontal_rule.replace_with(NavigableString(f"\n\n{marker}\n\n"))
+        replacement = footnote_marker if _starts_footnotes(horizontal_rule) else marker
+        horizontal_rule.replace_with(NavigableString(f"\n\n{replacement}\n\n"))
     for line_break in soup.find_all("br"):
         line_break.replace_with(NavigableString("\n"))
     for tag in soup.find_all(
@@ -123,36 +126,57 @@ def text_regions_from_html(data: bytes) -> list[str]:
         tag.insert_after(NavigableString("\n"))
 
     body = soup.body or soup
-    parts = body.get_text(" ", strip=False).split(marker)
-    return [normalize_text(part) for part in parts if normalize_text(part)]
+    chunks = re.split(
+        f"({re.escape(marker)}|{re.escape(footnote_marker)})",
+        body.get_text(" ", strip=False),
+    )
+    regions: list[str] = []
+    keep = True
+    for chunk in chunks:
+        if chunk == footnote_marker:
+            keep = False
+        elif chunk == marker:
+            keep = True
+        elif keep and normalize_text(chunk):
+            regions.append(normalize_text(chunk))
+    return regions
 
 
-def boilerplate_penalty(text: str) -> int:
+def _starts_footnotes(horizontal_rule: Tag) -> bool:
+    """Return whether an HTML rule introduces an IntraText footnote block."""
+    for element in horizontal_rule.next_elements:
+        if isinstance(element, Tag) and element.name == "hr":
+            return False
+        if isinstance(element, Tag) and element.name == "a":
+            anchor_name = element.get("name")
+            if isinstance(anchor_name, str) and anchor_name.startswith("$"):
+                return True
+    return False
+
+
+def boilerplate_penalty(text: str, language: str = DEFAULT_LANGUAGE) -> int:
     folded = text.casefold()
     penalty = 0
-    for phrase in (
-        "intratext - lecture du texte",
-        "copyright © libreria editrice vaticana",
-        "précédent",
-        "suivant",
-        "aide",
-        "le saint-siège",
-    ):
+    for phrase in get_language_profile(language).boilerplate_phrases:
         if phrase in folded:
             penalty += 5000
     return penalty
 
 
-def content_score(text: str) -> int:
-    numbered = len(re.findall(r"(?m)^\s*\d{1,4}\s+", text))
-    return len(text) + numbered * 1000 - boilerplate_penalty(text)
+def content_score(text: str, language: str = DEFAULT_LANGUAGE) -> int:
+    numbered = sum(
+        not is_biblical_reference(match.group(1))
+        for match in re.finditer(r"(?m)^\s*\d{1,4}\s+(.+)$", text)
+    )
+    return len(text) + numbered * 1000 - boilerplate_penalty(text, language)
 
 
-def extract_main_text(data: bytes) -> str:
+def extract_main_text(data: bytes, language: str = DEFAULT_LANGUAGE) -> str:
     regions = text_regions_from_html(data)
     if not regions:
         return ""
-    candidate = max(regions, key=content_score)
+    profile = get_language_profile(language)
+    candidate = max(regions, key=lambda text: content_score(text, language))
 
     lines: list[str] = []
     for line in candidate.splitlines():
@@ -161,13 +185,7 @@ def extract_main_text(data: bytes) -> str:
         if not stripped:
             lines.append("")
             continue
-        if folded in {
-            "catéchisme de l'église catholique",
-            "intratext - lecture du texte",
-            "précédent - suivant",
-            "précédent",
-            "suivant",
-        }:
+        if folded in profile.ignored_lines:
             continue
         if folded.startswith("copyright © libreria editrice vaticana"):
             continue
@@ -188,19 +206,28 @@ def strip_leading_duplicate_title(text: str, title: str) -> str:
     return text
 
 
-def next_page_url(data: bytes, current_url: str) -> str | None:
-    """Return the reading page referenced by IntraText's ``Suivant`` link."""
+def next_page_url(
+    data: bytes,
+    current_url: str,
+    language: str = DEFAULT_LANGUAGE,
+) -> str | None:
+    """Return the reading page referenced by IntraText's next-page link."""
+    next_label = get_language_profile(language).next_label
     soup = BeautifulSoup(data, "html.parser")
     for link in soup.find_all("a", href=True):
-        if normalize_text(link.get_text(" ", strip=True)).casefold() == "suivant":
+        if normalize_text(link.get_text(" ", strip=True)).casefold() == next_label:
             return clean_page_url(current_url, str(link["href"]))
     return None
 
 
-def append_page_body(entry: Entry, data: bytes) -> None:
-    text = extract_main_text(data)
+def append_page_body(
+    entry: Entry,
+    data: bytes,
+    language: str = DEFAULT_LANGUAGE,
+) -> None:
+    text = extract_main_text(data, language)
     text = strip_leading_duplicate_title(text, entry.title)
-    body = body_to_texinfo(text, entry_path_titles(entry))
+    body = body_to_texinfo(text, entry_path_titles(entry), language)
     if body:
         entry.body = "\n\n".join(part for part in (entry.body, body) if part)
 
@@ -225,6 +252,7 @@ def download_linked_pages(
     cache_dir: Path,
     refresh: bool,
     delay: float,
+    language: str = DEFAULT_LANGUAGE,
 ) -> dict[str, bytes]:
     page_data: dict[str, bytes] = {}
     total = len(downloadable)
@@ -232,7 +260,7 @@ def download_linked_pages(
         eprint(f"[{index:3d}/{total}] {entry.title}")
         data = fetch(url, cache_dir, refresh=refresh, delay=delay)
         page_data[url] = data
-        append_page_body(entry, data)
+        append_page_body(entry, data, language)
     return page_data
 
 
@@ -244,15 +272,16 @@ def discover_orphan_chain(
     cache_dir: Path,
     refresh: bool,
     delay: float,
+    language: str = DEFAULT_LANGUAGE,
 ) -> tuple[list[tuple[str, bytes]], str | None]:
-    """Follow ``Suivant`` links until reaching a known page or a cycle."""
+    """Follow next-page links until reaching a known page or a cycle."""
     current_url = start_url
     current_data = start_data
     chain: list[tuple[str, bytes]] = []
     seen_chain = {start_url}
 
     while True:
-        following = next_page_url(current_data, current_url)
+        following = next_page_url(current_data, current_url, language)
         if (
             following is None
             or following in seen_chain
@@ -261,7 +290,7 @@ def discover_orphan_chain(
         ):
             return chain, following
 
-        eprint(f"[page orpheline] {following}")
+        eprint(f"[orphan page] {following}")
         orphan_data = fetch(following, cache_dir, refresh=refresh, delay=delay)
         chain.append((following, orphan_data))
         seen_chain.add(following)
@@ -275,6 +304,7 @@ def assign_orphan_chain(
     source_entry: Entry,
     orphan_chain: list[tuple[str, bytes]],
     following_url: str | None,
+    language: str = DEFAULT_LANGUAGE,
 ) -> None:
     next_known_entry = url_entries.get(following_url) if following_url else None
     source_position = entry_positions[id(source_entry)]
@@ -291,7 +321,7 @@ def assign_orphan_chain(
 
     for _, orphan_data in orphan_chain:
         target = empty_entries.pop(0) if empty_entries else source_entry
-        append_page_body(target, orphan_data)
+        append_page_body(target, orphan_data, language)
 
 
 def load_bodies(
@@ -300,13 +330,20 @@ def load_bodies(
     cache_dir: Path,
     refresh: bool,
     delay: float,
+    language: str = DEFAULT_LANGUAGE,
 ) -> int:
     entries = list(flatten_entries(roots))
     downloadable = downloadable_entries(entries, index_url)
     entry_positions = {id(entry): index for index, entry in enumerate(entries)}
     url_entries = {url: entry for entry, url in downloadable}
     known_urls = set(url_entries)
-    page_data = download_linked_pages(downloadable, cache_dir, refresh, delay)
+    page_data = download_linked_pages(
+        downloadable,
+        cache_dir,
+        refresh,
+        delay,
+        language,
+    )
 
     orphan_urls: set[str] = set()
     for source_entry, source_url in downloadable:
@@ -318,6 +355,7 @@ def load_bodies(
             cache_dir,
             refresh,
             delay,
+            language,
         )
         if not orphan_chain:
             continue
@@ -329,5 +367,6 @@ def load_bodies(
             source_entry,
             orphan_chain,
             following,
+            language,
         )
     return len(orphan_urls)

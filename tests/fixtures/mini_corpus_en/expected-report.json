@@ -1,6 +1,6 @@
 {
-  "language": "fr",
-  "source_url": "https://fixture.test/book/_INDEX.HTM",
+  "language": "en",
+  "source_url": "https://fixture.test/book-en/_INDEX.HTM",
   "entries": 20,
   "pages": {
     "linked": 2,

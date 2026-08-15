@@ -14,6 +14,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+from cec2info_language import (
+    DEFAULT_LANGUAGE,
+    LANGUAGE_PROFILES,
+    get_language_profile,
+)
 from cec2info_model import (
     Entry,
     assign_nodes,
@@ -42,6 +47,7 @@ from cec2info_output import (
     emit_generation_report,
     emit_menu,
     human_size,
+    is_biblical_reference,
     is_repeated_path_heading,
     menu_label,
     paragraph_index_numbers,
@@ -73,6 +79,8 @@ from cec2info_parser import (
 # These names form the historical API of the monolithic module.
 __all__ = [
     "DEFAULT_INDEX",
+    "DEFAULT_LANGUAGE",
+    "LANGUAGE_PROFILES",
     "USER_AGENT",
     "VERSION",
     "Entry",
@@ -102,8 +110,10 @@ __all__ = [
     "fetch",
     "first_direct_link",
     "flatten_entries",
+    "get_language_profile",
     "heading_key",
     "human_size",
+    "is_biblical_reference",
     "is_repeated_path_heading",
     "load_bodies",
     "main",
@@ -134,130 +144,150 @@ def eprint(*args: object) -> None:
 def nonnegative_float(value: str) -> float:
     result = float(value)
     if result < 0:
-        raise argparse.ArgumentTypeError("la valeur doit être positive ou nulle")
+        raise argparse.ArgumentTypeError("value must be non-negative")
     return result
 
 
 def nonnegative_int(value: str) -> int:
     result = int(value)
     if result < 0:
-        raise argparse.ArgumentTypeError("la valeur doit être positive ou nulle")
+        raise argparse.ArgumentTypeError("value must be non-negative")
     return result
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Convertit le Catéchisme officiel du Vatican en GNU Texinfo/Info."
+        description="Convert the official Vatican Catechism to GNU Texinfo/Info."
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
-    parser.add_argument("--index-url", default=DEFAULT_INDEX)
+    parser.add_argument(
+        "--language",
+        choices=sorted(LANGUAGE_PROFILES),
+        default=DEFAULT_LANGUAGE,
+        help=f"source language (default: {DEFAULT_LANGUAGE})",
+    )
+    parser.add_argument(
+        "--index-url",
+        help="override the Vatican index URL selected by --language",
+    )
     parser.add_argument("--cache-dir", type=Path, default=Path(".cec-cache"))
-    parser.add_argument("-o", "--output", type=Path, default=Path("catechisme.texi"))
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="Texinfo output path (default depends on --language)",
+    )
     parser.add_argument(
         "--info",
         type=Path,
-        default=Path("catechisme.info"),
-        help="fichier Info produit avec --compile",
+        help="Info output path used with --compile (default depends on --language)",
     )
     parser.add_argument(
         "--compile",
         action="store_true",
-        help="appelle makeinfo après génération du .texi",
+        help="run makeinfo after generating the .texi file",
     )
     parser.add_argument(
         "--pdf",
         action="store_true",
-        help="appelle texi2dvi en mode PDF après génération du .texi",
+        help="run texi2dvi in PDF mode after generating the .texi file",
     )
     parser.add_argument(
         "--pdf-output",
         type=Path,
-        default=Path("catechisme.pdf"),
-        help="fichier PDF produit avec --pdf",
+        help="PDF output path used with --pdf (default depends on --language)",
     )
     parser.add_argument(
         "--epub",
         action="store_true",
-        help="appelle makeinfo pour générer un EPUB 3",
+        help="run makeinfo to generate an EPUB 3 file",
     )
     parser.add_argument(
         "--epub-output",
         type=Path,
-        default=Path("catechisme.epub"),
-        help="fichier EPUB produit avec --epub",
+        help="EPUB output path used with --epub (default depends on --language)",
     )
     parser.add_argument(
         "--refresh",
         action="store_true",
-        help="retélécharge les pages même si elles sont en cache",
+        help="download pages again even when they are cached",
     )
     parser.add_argument(
         "--delay",
         type=nonnegative_float,
         default=0.05,
-        help="pause entre téléchargements (secondes, défaut: 0.05)",
+        help="pause between downloads in seconds (default: 0.05)",
     )
     parser.add_argument(
         "--expected-last-paragraph",
         type=nonnegative_int,
         default=2865,
-        help="dernier paragraphe attendu pour la validation (0 pour désactiver)",
+        help="last expected paragraph for validation (0 disables the check)",
     )
     parser.add_argument(
         "--report-json",
         type=Path,
-        help="écrit aussi le rapport de génération au format JSON",
+        help="also write the generation report as JSON",
     )
     return parser
 
 
 def run(args: argparse.Namespace) -> int:
-    eprint(f"Téléchargement du sommaire : {args.index_url}")
+    profile = get_language_profile(args.language)
+    index_url = args.index_url or profile.index_url
+    output = args.output or Path(f"{profile.info_basename}.texi")
+    info_output = args.info or Path(f"{profile.info_basename}.info")
+    pdf_output = args.pdf_output or Path(f"{profile.info_basename}.pdf")
+    epub_output = args.epub_output or Path(f"{profile.info_basename}.epub")
+
+    eprint(f"Downloading table of contents: {index_url}")
     index_data = fetch(
-        args.index_url,
+        index_url,
         args.cache_dir,
         refresh=args.refresh,
         delay=args.delay,
     )
     roots = parse_index(index_data)
     entries = assign_nodes(roots)
-    eprint(f"{len(entries)} entrées de sommaire détectées.")
-    linked_pages = len(downloadable_entries(entries, args.index_url))
+    eprint(f"Detected {len(entries)} table-of-contents entries.")
+    linked_pages = len(downloadable_entries(entries, index_url))
     orphan_pages = load_bodies(
         roots,
-        args.index_url,
+        index_url,
         args.cache_dir,
         refresh=args.refresh,
         delay=args.delay,
+        language=args.language,
     )
 
-    texi = render_texinfo(roots, args.index_url)
+    texi = render_texinfo(roots, index_url, args.language)
     validate_paragraph_indexes(texi, args.expected_last_paragraph)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(texi, encoding="utf-8")
-    eprint(f"Texinfo écrit : {args.output}")
-    outputs = {"texinfo": args.output}
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(texi, encoding="utf-8")
+    eprint(f"Wrote Texinfo: {output}")
+    outputs = {"texinfo": output}
 
     if args.compile:
-        compile_info(args.output, args.info)
-        eprint(f"Info écrit : {args.info}")
-        outputs["info"] = args.info
+        compile_info(output, info_output)
+        eprint(f"Wrote Info: {info_output}")
+        outputs["info"] = info_output
     if args.pdf:
-        compile_pdf(args.output, args.pdf_output)
-        eprint(f"PDF écrit : {args.pdf_output}")
-        outputs["pdf"] = args.pdf_output
+        compile_pdf(output, pdf_output)
+        eprint(f"Wrote PDF: {pdf_output}")
+        outputs["pdf"] = pdf_output
     if args.epub:
-        compile_epub(args.output, args.epub_output)
-        eprint(f"EPUB écrit : {args.epub_output}")
-        outputs["epub"] = args.epub_output
+        compile_epub(output, epub_output)
+        eprint(f"Wrote EPUB: {epub_output}")
+        outputs["epub"] = epub_output
 
     report = build_generation_report(
-        source_url=args.index_url,
+        source_url=index_url,
         entry_count=len(entries),
         linked_pages=linked_pages,
         orphan_pages=orphan_pages,
         texi=texi,
         outputs=outputs,
+        language=args.language,
     )
     emit_generation_report(report, args.report_json)
     return 0
@@ -268,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return run(args)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
-        eprint(f"Erreur: {exc}")
+        eprint(f"Error: {exc}")
         return 1
 
 

@@ -13,7 +13,9 @@ import urllib.request
 from importlib import metadata
 from pathlib import Path, PurePosixPath
 
-DEFAULT_INDEX = "https://www.vatican.va/archive/FRA0013/_INDEX.HTM"
+from cec2info_language import FRENCH, OFFICIAL_INDEX_URLS
+
+DEFAULT_INDEX = FRENCH.index_url
 try:
     VERSION = metadata.version("cec2info")
 except metadata.PackageNotFoundError:
@@ -27,6 +29,14 @@ RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 def clean_page_url(index_url: str, href: str) -> str | None:
     absolute = urllib.parse.urljoin(index_url, href)
     parsed = urllib.parse.urlsplit(absolute)
+    index = urllib.parse.urlsplit(index_url)
+    if (
+        index.scheme == "https"
+        and parsed.scheme == "http"
+        and parsed.netloc.casefold() == index.netloc.casefold()
+    ):
+        parsed = parsed._replace(scheme="https")
+        absolute = urllib.parse.urlunsplit(parsed)
     name = PurePosixPath(parsed.path).name
 
     if re.fullmatch(r"_P[A-Za-z0-9]+\.HTM?", name, re.IGNORECASE):
@@ -49,14 +59,15 @@ def cache_filename(url: str) -> str:
     # the existing cache. For any other URL, include a digest of the complete
     # URL so two corpora using the same IntraText names cannot silently share
     # the same files.
-    default = urllib.parse.urlsplit(DEFAULT_INDEX)
-    if (
-        parsed.scheme == default.scheme
-        and parsed.netloc == default.netloc
-        and PurePosixPath(parsed.path).parent == PurePosixPath(default.path).parent
-        and not parsed.query
-    ):
-        return safe_name
+    for official_index_url in OFFICIAL_INDEX_URLS:
+        official = urllib.parse.urlsplit(official_index_url)
+        if (
+            parsed.scheme == official.scheme
+            and parsed.netloc == official.netloc
+            and PurePosixPath(parsed.path).parent == PurePosixPath(official.path).parent
+            and not parsed.query
+        ):
+            return safe_name
 
     normalized = urllib.parse.urlunsplit(parsed._replace(fragment=""))
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
@@ -94,11 +105,11 @@ def fetch(
     retry_backoff: float = 0.5,
 ) -> bytes:
     if delay < 0:
-        raise ValueError("delay doit être positif ou nul")
+        raise ValueError("delay must be non-negative")
     if timeout <= 0:
-        raise ValueError("timeout doit être strictement positif")
+        raise ValueError("timeout must be positive")
     if retries < 0 or retry_backoff < 0:
-        raise ValueError("retries et retry_backoff doivent être positifs ou nuls")
+        raise ValueError("retries and retry_backoff must be non-negative")
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     target = cache_dir / cache_filename(url)
@@ -119,7 +130,7 @@ def fetch(
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 data = response.read()
             if not data.strip():
-                raise ValueError("réponse vide")
+                raise ValueError("empty response")
         except urllib.error.HTTPError as exc:
             last_error = exc
             if exc.code not in RETRYABLE_HTTP_STATUS:
@@ -135,7 +146,7 @@ def fetch(
         if attempt + 1 < attempts and retry_backoff > 0:
             time.sleep(retry_backoff * (2**attempt))
 
-    detail = str(last_error) if last_error is not None else "erreur inconnue"
+    detail = str(last_error) if last_error is not None else "unknown error"
     raise RuntimeError(
-        f"Échec du téléchargement de {url} après {attempt + 1} tentative(s): {detail}"
+        f"Failed to download {url} after {attempt + 1} attempt(s): {detail}"
     ) from last_error

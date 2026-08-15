@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 
 from cec2info import (
     DEFAULT_INDEX,
+    LANGUAGE_PROFILES,
     USER_AGENT,
     VERSION,
     Entry,
@@ -33,7 +34,9 @@ from cec2info import (
     fetch,
     first_direct_link,
     flatten_entries,
+    get_language_profile,
     human_size,
+    is_biblical_reference,
     is_repeated_path_heading,
     load_bodies,
     main,
@@ -68,11 +71,11 @@ class ParseIndexTests(unittest.TestCase):
         self.assertEqual(direct_li_title(div), "")
 
     def test_missing_list_is_rejected(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "Aucune liste"):
+        with self.assertRaisesRegex(RuntimeError, "No list"):
             parse_index(b"<html><body>Sommaire absent</body></html>")
 
     def test_suspiciously_small_index_is_rejected(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "anormalement petit"):
+        with self.assertRaisesRegex(RuntimeError, "unusually small"):
             parse_index("<ul><li>Une seule entrée</li></ul>".encode())
 
     def test_transparent_nested_list_wrapper(self) -> None:
@@ -110,21 +113,29 @@ class ParseIndexTests(unittest.TestCase):
 class TexinfoConversionTests(unittest.TestCase):
     def test_empty_body_and_empty_document_are_supported(self) -> None:
         self.assertEqual(body_to_texinfo(""), "")
+        self.assertEqual(body_to_texinfo(" \n\n "), "")
         self.assertEqual(extract_main_text(b""), "")
         self.assertIn("@menu\n* Index::", render_texinfo([], "https://example.test"))
 
     def test_real_paragraph_is_indexed(self) -> None:
         result = body_to_texinfo(
-            '1 Dieu nous appelle.\n\n26" Nous croyons. "'
+            '1 Dieu nous appelle.\n\n26" Nous croyons. "\n27 Suite.\n28 The\n\nbody.'
         )
         self.assertIn("@cindex 1", result)
         self.assertIn("@cindex 26", result)
+        self.assertIn("@cindex 27", result)
+        self.assertIn("@cindex 28", result)
 
     def test_split_biblical_reference_is_not_indexed(self) -> None:
-        result = body_to_texinfo("128 Un texte (cf.\n\n1 P 3, 21).")
+        result = body_to_texinfo(
+            "128 Un texte (cf.\n\n1 P 3, 21).\n\n2 1 Tim 2:3-4."
+        )
         self.assertIn("@cindex 128", result)
         self.assertNotIn("@cindex 1\n", result)
+        self.assertNotIn("@cindex 2\n", result)
         self.assertIn("1 P 3, 21", result)
+        self.assertTrue(is_biblical_reference("Jn 17 3"))
+        self.assertTrue(is_biblical_reference("1 Tim 2:3-4"))
 
     def test_boilerplate_is_removed_from_main_text(self) -> None:
         data = b"""
@@ -155,6 +166,31 @@ class TexinfoConversionTests(unittest.TestCase):
         """.encode()
 
         self.assertEqual(extract_main_text(data), "1 Texte conservé.")
+
+    def test_english_navigation_and_boilerplate_are_removed(self) -> None:
+        data = b"""
+        <body>
+          <p>Catechism of the Catholic Church</p>
+          <p>IntraText - Text</p>
+          <p>Previous</p><p>Next</p>
+          <p>1 Text to keep.</p>
+        </body>
+        """
+
+        self.assertEqual(extract_main_text(data, "en"), "1 Text to keep.")
+
+    def test_intratext_footnote_block_is_excluded(self) -> None:
+        data = b"""
+        <body>
+          <hr><p>27 Main paragraph.</p>
+          <hr width="30%"><a name="$K">1</a> Footnote text.
+          <hr><p>Previous - Next</p>
+        </body>
+        """
+
+        text = extract_main_text(data, "en")
+        self.assertEqual(text, "27 Main paragraph.")
+        self.assertEqual(paragraph_index_numbers(body_to_texinfo(text, language="en")), [27])
 
     def test_repeated_heading_is_limited_to_info_output(self) -> None:
         result = body_to_texinfo(
@@ -212,6 +248,29 @@ class TexinfoConversionTests(unittest.TestCase):
         nested_article = Entry("ARTICLE 2", None, 3, parent=intertitle)
         self.assertTrue(tex_section_command(nested_article).startswith("@section"))
 
+    def test_english_semantic_headings_and_document_metadata(self) -> None:
+        part = Entry(title="PART ONE: THE PROFESSION OF FAITH", href=None, depth=1)
+        section = Entry(title="SECTION ONE I BELIEVE", href=None, depth=2, parent=part)
+        chapter = Entry(title="CHAPTER ONE", href=None, depth=3, parent=section)
+        part.children.append(section)
+        section.children.append(chapter)
+        chapter.body = body_to_texinfo("1 English paragraph.", language="en")
+        assign_nodes([part])
+
+        self.assertTrue(tex_section_command(part, "en").startswith("@unnumbered"))
+        self.assertTrue(tex_section_command(section, "en").startswith("@chapter"))
+        self.assertTrue(tex_section_command(chapter, "en").startswith("@section"))
+        self.assertEqual(
+            tex_section_command(Entry("IN BRIEF", None, 1), "en"),
+            "@subsubheading IN BRIEF",
+        )
+
+        texi = render_texinfo([part], "https://example.test/en", "en")
+        self.assertIn("@documentlanguage en", texi)
+        self.assertIn("@settitle Catechism of the Catholic Church", texi)
+        self.assertIn("@cindex CCC 1", texi)
+        self.assertIn("@unnumbered Index of CCC paragraphs", texi)
+
     def test_duplicate_title_stripping_handles_match_and_mismatch(self) -> None:
         self.assertEqual(
             strip_leading_duplicate_title("Titre sur\ndeux lignes\n1 Corps", "Titre sur deux lignes"),
@@ -231,6 +290,13 @@ class NavigationAndValidationTests(unittest.TestCase):
             "https://example.test/book/__P12.HTM",
         )
         self.assertIsNone(clean_page_url(index, "notes.html"))
+        self.assertEqual(
+            clean_page_url(
+                "https://www.vatican.va/archive/ENG0015/_INDEX.HTM",
+                "http://www.vatican.va/archive/ENG0015/__P12.HTM",
+            ),
+            "https://www.vatican.va/archive/ENG0015/__P12.HTM",
+        )
 
     def test_next_page_url_finds_orphan_page(self) -> None:
         data = '<a href="__P15.HTM">Suivant</a>'.encode()
@@ -239,6 +305,16 @@ class NavigationAndValidationTests(unittest.TestCase):
             "https://example.test/book/__P15.HTM",
         )
         self.assertIsNone(next_page_url(b"<p>Fin</p>", "https://example.test/book/__P15.HTM"))
+
+        english_data = '<a href="__P16.HTM">Next</a>'.encode()
+        self.assertEqual(
+            next_page_url(
+                english_data,
+                "https://example.test/book/__P15.HTM",
+                "en",
+            ),
+            "https://example.test/book/__P16.HTM",
+        )
 
     def test_cache_is_namespaced_outside_official_source(self) -> None:
         first = cache_filename("https://one.test/book/__P1.HTM")
@@ -252,16 +328,20 @@ class NavigationAndValidationTests(unittest.TestCase):
             "__P1.HTM",
         )
         self.assertEqual(cache_filename(DEFAULT_INDEX), "_INDEX.HTM")
+        self.assertEqual(
+            cache_filename("https://www.vatican.va/archive/ENG0015/__P1.HTM"),
+            "__P1.HTM",
+        )
 
     def test_validation_rejects_missing_and_duplicate_numbers(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "absents.*doublons"):
+        with self.assertRaisesRegex(RuntimeError, "missing.*duplicates"):
             validate_paragraph_indexes(
                 "@cindex 1\n@cindex 1\n@cindex 3\n",
                 expected_last=3,
             )
 
     def test_validation_reports_out_of_range_and_can_be_disabled(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "hors plage"):
+        with self.assertRaisesRegex(RuntimeError, "out of range"):
             validate_paragraph_indexes(
                 "@cindex 1\n@cindex 2\n@cindex 3\n",
                 expected_last=2,
@@ -437,7 +517,7 @@ class FetchTests(unittest.TestCase):
                 "cec2info_network.urllib.request.urlopen",
                 side_effect=error,
             ) as urlopen:
-                with self.assertRaisesRegex(RuntimeError, "1 tentative"):
+                with self.assertRaisesRegex(RuntimeError, "1 attempt"):
                     fetch(
                         self.url,
                         Path(directory),
@@ -458,7 +538,7 @@ class FetchTests(unittest.TestCase):
                 "cec2info_network.urllib.request.urlopen",
                 return_value=io.BytesIO(b""),
             ):
-                with self.assertRaisesRegex(RuntimeError, "réponse vide"):
+                with self.assertRaisesRegex(RuntimeError, "empty response"):
                     fetch(
                         self.url,
                         cache_dir,
@@ -484,10 +564,10 @@ class FetchTests(unittest.TestCase):
 
 class GenerationReportTests(unittest.TestCase):
     def test_human_size_uses_binary_units(self) -> None:
-        self.assertEqual(human_size(0), "0 o")
-        self.assertEqual(human_size(1024), "1.0 Kio")
-        self.assertEqual(human_size(1024**2), "1.0 Mio")
-        self.assertEqual(human_size(1024**3), "1.0 Gio")
+        self.assertEqual(human_size(0), "0 B")
+        self.assertEqual(human_size(1024), "1.0 KiB")
+        self.assertEqual(human_size(1024**2), "1.0 MiB")
+        self.assertEqual(human_size(1024**3), "1.0 GiB")
 
     def test_text_and_json_report(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -510,9 +590,10 @@ class GenerationReportTests(unittest.TestCase):
             with contextlib.redirect_stderr(stderr):
                 emit_generation_report(report, json_path)
 
-            self.assertIn("3 (2 liées, 1 orphelines)", stderr.getvalue())
-            self.assertIn("2 uniques, plage 1–2", stderr.getvalue())
+            self.assertIn("3 (2 linked, 1 orphan)", stderr.getvalue())
+            self.assertIn("2 unique, range 1–2", stderr.getvalue())
             saved = json.loads(json_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["language"], "fr")
             self.assertEqual(saved["paragraphs"]["unique"], 2)
             self.assertEqual(saved["outputs"]["info"]["bytes"], 14)
 
@@ -531,7 +612,7 @@ class GenerationReportTests(unittest.TestCase):
             emit_generation_report(report)
 
         self.assertEqual(report["outputs"], {})
-        self.assertIn("plage None–None", stderr.getvalue())
+        self.assertIn("range None–None", stderr.getvalue())
 
 
 class MiniCorpusIntegrationTests(unittest.TestCase):
@@ -592,10 +673,73 @@ class MiniCorpusIntegrationTests(unittest.TestCase):
             )
             self.assertEqual(report, expected)
 
+    def test_complete_english_local_corpus_pipeline(self) -> None:
+        fixture_dir = FIXTURES / "mini_corpus_en"
+        index_url = "https://fixture.test/book-en/_INDEX.HTM"
+        pages = {
+            index_url: (fixture_dir / "index.html").read_bytes(),
+            "https://fixture.test/book-en/__P1.HTM": (
+                fixture_dir / "page1.html"
+            ).read_bytes(),
+            "https://fixture.test/book-en/__P2.HTM": (
+                fixture_dir / "page2.html"
+            ).read_bytes(),
+            "https://fixture.test/book-en/__P3.HTM": (
+                fixture_dir / "page3.html"
+            ).read_bytes(),
+        }
+
+        def fixture_fetch(url: str, *_args: object, **_kwargs: object) -> bytes:
+            return pages[url]
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            output = base / "mini-corpus-en.texi"
+            report_path = base / "report.json"
+            args = build_parser().parse_args(
+                [
+                    "--language",
+                    "en",
+                    "--index-url",
+                    index_url,
+                    "--cache-dir",
+                    str(base / "cache"),
+                    "--output",
+                    str(output),
+                    "--expected-last-paragraph",
+                    "3",
+                    "--report-json",
+                    str(report_path),
+                ]
+            )
+            with (
+                patch("cec2info.fetch", side_effect=fixture_fetch),
+                patch("cec2info_parser.fetch", side_effect=fixture_fetch),
+            ):
+                status = run(args)
+
+            self.assertEqual(status, 0)
+            texi = output.read_text(encoding="utf-8")
+            self.assertEqual(paragraph_index_numbers(texi), [1, 2, 3])
+            self.assertIn("@documentlanguage en", texi)
+            self.assertIn("@cindex CCC 1", texi)
+            self.assertIn("@strong{2} Paragraph from the orphan page", texi)
+
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report.pop("outputs")
+            expected = json.loads(
+                (fixture_dir / "expected-report.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(report, expected)
+
 
 class CliTests(unittest.TestCase):
     def test_user_agent_uses_package_version(self) -> None:
         self.assertIn(f"cec2info/{VERSION}", USER_AGENT)
+
+    def test_unknown_language_profile_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported language 'de'"):
+            get_language_profile("de")
 
     def test_parser_accepts_all_output_formats(self) -> None:
         args = build_parser().parse_args(
@@ -621,17 +765,53 @@ class CliTests(unittest.TestCase):
         self.assertTrue(args.epub)
         self.assertEqual(args.epub_output, Path("manuel.epub"))
         self.assertEqual(args.expected_last_paragraph, 0)
+        self.assertEqual(args.language, "fr")
+
+    def test_english_language_selects_official_source_and_metadata(self) -> None:
+        items = "".join(
+            f'<li><a href="__P{i}.HTM">Entry {i}</a></li>'
+            for i in range(1, 21)
+        )
+        index_data = f"<ul>{items}</ul>".encode()
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            args = build_parser().parse_args(
+                [
+                    "--language",
+                    "en",
+                    "--cache-dir",
+                    str(base / "cache"),
+                    "--output",
+                    str(base / "book.texi"),
+                    "--expected-last-paragraph",
+                    "0",
+                ]
+            )
+            with (
+                patch("cec2info.fetch", return_value=index_data) as fetch_index,
+                patch("cec2info.load_bodies", return_value=0),
+            ):
+                status = run(args)
+
+            self.assertEqual(status, 0)
+            fetch_index.assert_called_once()
+            self.assertEqual(fetch_index.call_args.args[0], LANGUAGE_PROFILES["en"].index_url)
+            self.assertIn(
+                "@documentlanguage en",
+                (base / "book.texi").read_text(encoding="utf-8"),
+            )
 
     def test_parser_rejects_negative_delay(self) -> None:
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
             build_parser().parse_args(["--delay", "-1"])
-        self.assertIn("positive ou nulle", stderr.getvalue())
+        self.assertIn("must be non-negative", stderr.getvalue())
 
     def test_numeric_argument_types_accept_nonnegative_values(self) -> None:
         self.assertEqual(nonnegative_float("0.25"), 0.25)
         self.assertEqual(nonnegative_int("12"), 12)
-        with self.assertRaisesRegex(argparse.ArgumentTypeError, "positive ou nulle"):
+        with self.assertRaisesRegex(argparse.ArgumentTypeError, "must be non-negative"):
             nonnegative_int("-1")
 
     def test_main_reports_expected_error_without_traceback(self) -> None:
@@ -643,7 +823,7 @@ class CliTests(unittest.TestCase):
             status = main([])
 
         self.assertEqual(status, 1)
-        self.assertIn("Erreur: échec contrôlé", stderr.getvalue())
+        self.assertIn("Error: échec contrôlé", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_run_writes_texinfo_and_report(self) -> None:
@@ -726,7 +906,7 @@ class CliTests(unittest.TestCase):
 
 @unittest.skipUnless(
     all(shutil.which(tool) for tool in ("makeinfo", "texi2dvi")),
-    "Texinfo/TeX ne sont pas installés",
+    "Texinfo/TeX are not installed",
 )
 class FormatCompilationTests(unittest.TestCase):
     def test_info_pdf_and_epub_are_generated(self) -> None:
