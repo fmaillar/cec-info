@@ -111,6 +111,9 @@ du réseau pour détecter une régression d'intégration.
 Le typage statique progressif peut aussi être exécuté séparément avec
 `make typecheck`.
 
+Les actions tierces sont épinglées par empreinte Git complète. Dependabot
+surveille ces références chaque semaine et propose leurs mises à jour.
+
 ## Publication
 
 Un tag `vX.Y.Z` correspondant à la version de `pyproject.toml` déclenche les

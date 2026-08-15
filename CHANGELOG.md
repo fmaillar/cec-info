@@ -13,6 +13,7 @@ versionnage sémantique.
 - mini-corpus IntraText local et test d'intégration déterministe de la chaîne
   complète jusqu'au rapport JSON.
 - politique de sécurité et canal GitHub de signalement privé des vulnérabilités.
+- épinglage par SHA des actions GitHub, avec suivi hebdomadaire par Dependabot.
 
 ## [3.4.0] - 2026-08-15
 
