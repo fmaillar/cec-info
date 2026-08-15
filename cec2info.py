@@ -11,7 +11,7 @@ Principe :
 - utilise les pages "__P*.HTM", variantes IntraText sans concordances ;
 - crée un @node GNU Info par entrée du sommaire ;
 - indexe les numéros de paragraphes du CEC ;
-- peut appeler makeinfo pour produire catechisme.info.
+- peut appeler makeinfo/texi2dvi pour produire Info, PDF et EPUB 3.
 
 Dépendance Python : BeautifulSoup 4 (paquet Debian python3-bs4).
 """
@@ -111,7 +111,18 @@ def parse_index(data: bytes) -> list[Entry]:
     roots: list[Entry] = []
 
     def walk(list_tag: Tag, parent: Entry | None, depth: int) -> None:
-        for li in list_tag.find_all("li", recursive=False):
+        direct_items = list(list_tag.find_all("li", recursive=False))
+
+        # Le sommaire IntraText contient quelques wrappers invalides du type
+        # ``ul > ul > li`` (notamment tout le prologue et la fin du CEC).  Ils
+        # ne représentent pas un niveau logique supplémentaire : les traverser
+        # en conservant le même parent et la même profondeur.
+        if not direct_items:
+            for nested in list_tag.find_all(["ul", "ol"], recursive=False):
+                walk(nested, parent, depth)
+            return
+
+        for li in direct_items:
             title = direct_li_title(li)
             if not title:
                 continue
@@ -309,11 +320,6 @@ def body_to_texinfo(text: str, path_titles: list[str] | None = None) -> str:
     if not text:
         return ""
 
-    text = re.sub(
-        r"(?<!\n)(?<!\d)\s+(\d{1,4})\s+(?=[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŒ«\"] )".replace(" ]", "]"),
-        r"\n\n\1 ",
-        text,
-    )
     paragraphs = [
         normalize_text(p) for p in re.split(r"\n\s*\n", text) if normalize_text(p)
     ]
@@ -327,13 +333,16 @@ def body_to_texinfo(text: str, path_titles: list[str] | None = None) -> str:
         part = normalize_text(" ".join(para.splitlines()))
         match = PARA_RE.match(part)
         if match:
-            before_first_number = False
             number, rest = match.groups()
-            out.append(f"@cindex {number}")
-            out.append(f"@cindex CEC {number}")
-            out.append(f"@strong{{{number}}} {texi_escape(rest)}")
-            out.append("")
-            continue
+            # Une référence biblique coupée par la mise en page peut donner un
+            # faux paragraphe tel que ``1 P 3, 21`` ou ``2 S 7, 14``.
+            if not re.match(r"^[A-ZÀ-ÖØ-Þ]{1,3}\s+\d", rest):
+                before_first_number = False
+                out.append(f"@cindex {number}")
+                out.append(f"@cindex CEC {number}")
+                out.append(f"@strong{{{number}}} {texi_escape(rest)}")
+                out.append("")
+                continue
 
         escaped = texi_escape(part)
         # Le HTML Vatican répète souvent au début d'une page les titres du
@@ -595,9 +604,9 @@ def compile_info(texi_path: Path, info_path: Path) -> None:
 
 
 def compile_pdf(texi_path: Path, pdf_path: Path) -> None:
-    texi2pdf = shutil.which("texi2pdf")
-    if texi2pdf is None:
-        raise RuntimeError("texi2pdf est introuvable. Installez Texinfo/TeX.")
+    texi2dvi = shutil.which("texi2dvi")
+    if texi2dvi is None:
+        raise RuntimeError("texi2dvi est introuvable. Installez Texinfo/TeX.")
     # Un ancien .toc provenant d'une compilation interrompue peut rendre
     # l'itération suivante invalide. Nettoyage des auxiliaires Texinfo/TeX.
     stem = texi_path.with_suffix("")
@@ -609,7 +618,25 @@ def compile_pdf(texi_path: Path, pdf_path: Path) -> None:
             aux.unlink()
 
     subprocess.run(
-        [texi2pdf, "--batch", "--output", str(pdf_path), str(texi_path)],
+        [
+            texi2dvi,
+            "--batch",
+            "--dvipdf",
+            "--output",
+            str(pdf_path.resolve()),
+            texi_path.name,
+        ],
+        check=True,
+        cwd=texi_path.parent,
+    )
+
+
+def compile_epub(texi_path: Path, epub_path: Path) -> None:
+    makeinfo = shutil.which("makeinfo")
+    if makeinfo is None:
+        raise RuntimeError("makeinfo est introuvable. Installez le paquet Debian 'texinfo'.")
+    subprocess.run(
+        [makeinfo, "--epub3", "--output", str(epub_path), str(texi_path)],
         check=True,
     )
 
@@ -628,12 +655,23 @@ def main() -> int:
         help="fichier Info produit avec --compile",
     )
     parser.add_argument("--compile", action="store_true", help="appelle makeinfo après génération du .texi")
-    parser.add_argument("--pdf", action="store_true", help="appelle texi2pdf après génération du .texi")
+    parser.add_argument(
+        "--pdf",
+        action="store_true",
+        help="appelle texi2dvi en mode PDF après génération du .texi",
+    )
     parser.add_argument(
         "--pdf-output",
         type=Path,
         default=Path("catechisme.pdf"),
         help="fichier PDF produit avec --pdf",
+    )
+    parser.add_argument("--epub", action="store_true", help="appelle makeinfo pour générer un EPUB 3")
+    parser.add_argument(
+        "--epub-output",
+        type=Path,
+        default=Path("catechisme.epub"),
+        help="fichier EPUB produit avec --epub",
     )
     parser.add_argument("--refresh", action="store_true", help="retélécharge les pages même si elles sont en cache")
     parser.add_argument(
@@ -662,6 +700,10 @@ def main() -> int:
     if args.pdf:
         compile_pdf(args.output, args.pdf_output)
         eprint(f"PDF écrit : {args.pdf_output}")
+
+    if args.epub:
+        compile_epub(args.output, args.epub_output)
+        eprint(f"EPUB écrit : {args.epub_output}")
     return 0
 
 

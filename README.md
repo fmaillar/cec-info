@@ -12,22 +12,37 @@ sudo apt install python3-bs4 texinfo
 
 `pandoc` n'est pas nécessaire.
 
+La génération PDF demande également une installation TeX fournissant
+`texi2dvi` et un convertisseur DVI vers PDF (par exemple `texlive` sur Debian).
+
 ## Utilisation
 
 ```sh
-python3 cec2info.py --compile
+make
 ```
 
 Le script crée :
 
 - `.cec-cache/` : cache local des pages HTML ;
 - `catechisme.texi` : source Texinfo ;
-- `catechisme.info` : manuel GNU Info.
+- `catechisme.info` : manuel GNU Info ;
+- `catechisme.pdf` : version PDF ;
+- `catechisme.epub` : livre EPUB 3.
+
+Pour ne produire qu'un format :
+
+```sh
+make info
+make pdf
+make epub
+```
+
+Les tests locaux se lancent avec `make test`.
 
 Pour forcer un nouveau téléchargement :
 
 ```sh
-python3 cec2info.py --refresh --compile
+python3 cec2info.py --refresh --compile --pdf --epub
 ```
 
 ## Lecture dans Emacs
