@@ -86,6 +86,16 @@ Le workflow GitHub Actions `.github/workflows/ci.yml` teste Python 3.10 et
 3.13. Il installe le paquet, vérifie la commande `cec2info`, exécute les tests
 Info/PDF/EPUB et construit une wheel sans télécharger le corpus du Vatican.
 
+## Publication
+
+Un tag `vX.Y.Z` correspondant à la version de `pyproject.toml` déclenche les
+tests, construit le wheel et le paquet source, puis publie une GitHub Release.
+
+La publication PyPI utilise Trusted Publishing (OIDC), sans secret permanent.
+Le publisher PyPI doit cibler le propriétaire `fmaillar`, le dépôt `cec-info`,
+le workflow `release.yml` et l'environnement GitHub `pypi`. La variable de
+dépôt `PYPI_PUBLISH` active cette étape lorsqu'elle vaut `true`.
+
 ## Lecture dans Emacs
 
 ```elisp
