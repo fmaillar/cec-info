@@ -5,6 +5,21 @@ Les changements notables du projet sont documentés dans ce fichier.
 Le format suit les principes de *Keep a Changelog* et les versions suivent le
 versionnage sémantique.
 
+## [Non publié]
+
+### Ajouté
+
+- reprises réseau avec délai progressif et écritures atomiques du cache ;
+- tests du CLI, des erreurs réseau, des pages dupliquées et cycliques, de
+  l'extraction HTML et des outils système absents ;
+- analyse Ruff et seuil minimal de 80 % de couverture de branches dans la CI.
+
+### Modifié
+
+- séparation de l'analyse des arguments et de l'exécution du convertisseur ;
+- découpage du téléchargement, de la découverte et de l'affectation des pages ;
+- version de l'agent HTTP issue des métadonnées du paquet.
+
 ## [3.3.1] - 2026-08-15
 
 ### Ajouté
