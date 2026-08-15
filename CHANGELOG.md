@@ -7,6 +7,10 @@ versionnage sémantique.
 
 ## [Non publié]
 
+### Ajouté
+
+- contrôle statique progressif des types avec mypy sur tous les modules.
+
 ## [3.4.0] - 2026-08-15
 
 ### Ajouté

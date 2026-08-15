@@ -27,7 +27,7 @@ def eprint(*args: object) -> None:
 def direct_li_title(li: Tag) -> str:
     clone = BeautifulSoup(str(li), "html.parser")
     root = clone.find("li")
-    if root is None:
+    if not isinstance(root, Tag):
         return ""
     for nested in root.find_all(["ul", "ol"]):
         nested.decompose()
@@ -40,7 +40,7 @@ def first_direct_link(li: Tag) -> str | None:
             return str(child["href"])
         if isinstance(child, Tag) and child.name not in {"ul", "ol"}:
             link = child.find("a", href=True)
-            if link is not None:
+            if isinstance(link, Tag):
                 return str(link["href"])
     return None
 

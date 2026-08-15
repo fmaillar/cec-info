@@ -75,9 +75,10 @@ jobs:
       - name: Check command entry point
         run: cec2info --help
 
-      - name: Run lint and unit tests
+      - name: Run quality checks and unit tests
         run: |
           python -m ruff check .
+          python -m mypy
           python -m unittest discover -s tests -v
 
       - name: Build wheel
