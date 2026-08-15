@@ -43,6 +43,7 @@ from cec2info_output import (
     compile_info,
     compile_pdf,
     conditional_entry_heading,
+    deduplicate_paragraph_indexes,
     effective_tex_level,
     emit_generation_report,
     emit_menu,
@@ -63,6 +64,7 @@ from cec2info_parser import (
     assign_orphan_chain,
     boilerplate_penalty,
     content_score,
+    correct_paragraph_numbers,
     direct_li_title,
     discover_orphan_chain,
     download_linked_pages,
@@ -98,6 +100,8 @@ __all__ = [
     "compile_pdf",
     "conditional_entry_heading",
     "content_score",
+    "correct_paragraph_numbers",
+    "deduplicate_paragraph_indexes",
     "direct_li_title",
     "discover_orphan_chain",
     "download_linked_pages",
@@ -247,10 +251,10 @@ def run(args: argparse.Namespace) -> int:
         refresh=args.refresh,
         delay=args.delay,
     )
-    roots = parse_index(index_data)
+    roots = parse_index(index_data, args.language, index_url)
     entries = assign_nodes(roots)
     eprint(f"Detected {len(entries)} table-of-contents entries.")
-    linked_pages = len(downloadable_entries(entries, index_url))
+    linked_pages = len(downloadable_entries(entries, index_url, args.language))
     orphan_pages = load_bodies(
         roots,
         index_url,
@@ -260,7 +264,7 @@ def run(args: argparse.Namespace) -> int:
         language=args.language,
     )
 
-    texi = render_texinfo(roots, index_url, args.language)
+    texi = deduplicate_paragraph_indexes(render_texinfo(roots, index_url, args.language))
     validate_paragraph_indexes(texi, args.expected_last_paragraph)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(texi, encoding="utf-8")

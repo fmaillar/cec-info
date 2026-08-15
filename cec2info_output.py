@@ -11,7 +11,7 @@ from pathlib import Path
 from cec2info_language import DEFAULT_LANGUAGE, get_language_profile
 from cec2info_model import Entry, flatten_entries, heading_key, normalize_text
 
-PARA_RE = re.compile(r'^\s*(\d{1,4})(?:\s+|(?=["«]))(.+)$')
+PARA_RE = re.compile(r'^\s*(\d{1,4})[.]?(?:\s+|(?=["«]))(.+)$')
 BIBLE_REFERENCE_RE = re.compile(
     r"^(?:[1-3]\s+)?[A-ZÀ-ÖØ-Þ][A-ZÀ-ÖØ-öø-ÿ.]{0,5}\s+\d",
     re.IGNORECASE,
@@ -47,6 +47,9 @@ def is_repeated_path_heading(text: str, path_titles: list[str]) -> bool:
 
 def is_biblical_reference(text: str) -> bool:
     """Return whether text starts with a numbered Bible book reference."""
+    first_word = text.split(maxsplit=1)[0].casefold() if text else ""
+    if first_word in {"das", "der", "die"}:
+        return False
     return BIBLE_REFERENCE_RE.match(text) is not None
 
 
@@ -54,6 +57,8 @@ def body_to_texinfo(
     text: str,
     path_titles: list[str] | None = None,
     language: str = DEFAULT_LANGUAGE,
+    *,
+    index_paragraphs: bool = True,
 ) -> str:
     if not text:
         return ""
@@ -72,9 +77,10 @@ def body_to_texinfo(
             # paragraph, such as ``1 P 3, 21`` or ``2 S 7, 14``.
             if not is_biblical_reference(rest):
                 before_first_number = False
-                output.append(f"@cindex {number}")
-                prefix = get_language_profile(language).paragraph_prefix
-                output.append(f"@cindex {prefix} {number}")
+                if index_paragraphs:
+                    output.append(f"@cindex {number}")
+                    prefix = get_language_profile(language).paragraph_prefix
+                    output.append(f"@cindex {prefix} {number}")
                 output.append(f"@strong{{{number}}} {texi_escape(rest)}")
                 output.append("")
                 continue
@@ -92,21 +98,27 @@ def _split_text_paragraphs(text: str) -> list[str]:
     """Split paragraphs and recover consecutive numbers merged by malformed HTML."""
     paragraphs: list[str] = []
     for raw_part in re.split(r"\n\s*\n", text):
-        part = normalize_text(" ".join(raw_part.splitlines()))
-        if not part:
-            continue
-
-        match = PARA_RE.match(part)
-        while match:
-            next_number = int(match.group(1)) + 1
-            boundary = re.search(rf"\s+(?={next_number}(?:\s+|(?=[\"«])))", part)
-            if boundary is None:
-                break
-            paragraphs.append(part[: boundary.start()].rstrip())
-            part = part[boundary.end() :].lstrip()
-            match = PARA_RE.match(part)
-        paragraphs.append(part)
+        dotted_parts = re.split(r"(?m)(?=^\s*\d{1,4}[.]\s+)", raw_part)
+        for dotted_part in dotted_parts:
+            _append_split_paragraph(paragraphs, dotted_part)
     return paragraphs
+
+
+def _append_split_paragraph(paragraphs: list[str], raw_part: str) -> None:
+    part = normalize_text(" ".join(raw_part.splitlines()))
+    if not part:
+        return
+
+    match = PARA_RE.match(part)
+    while match:
+        next_number = int(match.group(1)) + 1
+        boundary = re.search(rf"\s+(?={next_number}[.]?(?:\s+|(?=[\"«])))", part)
+        if boundary is None:
+            break
+        paragraphs.append(part[: boundary.start()].rstrip())
+        part = part[boundary.end() :].lstrip()
+        match = PARA_RE.match(part)
+    paragraphs.append(part)
 
 
 def sibling_pointers(entry: Entry, roots: list[Entry]) -> tuple[str, str]:
@@ -226,7 +238,7 @@ def render_texinfo(
     chunks.append(
         "\\input texinfo\n"
         "@documentencoding UTF-8\n"
-        f"@documentlanguage {profile.code}\n"
+        f"@documentlanguage {profile.texinfo_language}\n"
         f"@setfilename {profile.info_basename}.info\n"
         f"@settitle {profile.document_title}\n\n"
         "@dircategory Religion\n"
@@ -279,6 +291,33 @@ def render_texinfo(
 
 def paragraph_index_numbers(texi: str) -> list[int]:
     return [int(number) for number in re.findall(r"(?m)^@cindex (\d+)$", texi)]
+
+
+def deduplicate_paragraph_indexes(texi: str) -> str:
+    """Keep the first index entry when embedded numbered lists reuse a number."""
+    lines = texi.splitlines(keepends=True)
+    output: list[str] = []
+    seen: set[int] = set()
+    discard_prefixed_number: int | None = None
+    for line in lines:
+        numeric = re.fullmatch(r"@cindex (\d+)\n?", line)
+        if numeric:
+            number = int(numeric.group(1))
+            if number in seen:
+                discard_prefixed_number = number
+                continue
+            seen.add(number)
+            discard_prefixed_number = None
+            output.append(line)
+            continue
+        if discard_prefixed_number is not None and re.fullmatch(
+            rf"@cindex \S+ {discard_prefixed_number}\n?", line
+        ):
+            discard_prefixed_number = None
+            continue
+        discard_prefixed_number = None
+        output.append(line)
+    return "".join(output)
 
 
 def validate_paragraph_indexes(texi: str, expected_last: int) -> None:

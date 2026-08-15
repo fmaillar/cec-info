@@ -13,7 +13,7 @@ import urllib.request
 from importlib import metadata
 from pathlib import Path, PurePosixPath
 
-from cec2info_language import FRENCH, OFFICIAL_INDEX_URLS
+from cec2info_language import DEFAULT_LANGUAGE, FRENCH, get_language_profile
 
 DEFAULT_INDEX = FRENCH.index_url
 try:
@@ -26,7 +26,11 @@ SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 
 
-def clean_page_url(index_url: str, href: str) -> str | None:
+def clean_page_url(
+    index_url: str,
+    href: str,
+    language: str = DEFAULT_LANGUAGE,
+) -> str | None:
     absolute = urllib.parse.urljoin(index_url, href)
     parsed = urllib.parse.urlsplit(absolute)
     index = urllib.parse.urlsplit(index_url)
@@ -47,6 +51,18 @@ def clean_page_url(index_url: str, href: str) -> str | None:
         )
     if re.fullmatch(r"__P[A-Za-z0-9]+\.HTM?", name, re.IGNORECASE):
         return absolute
+    profile = get_language_profile(language)
+    if profile.source_format == "legacy":
+        same_directory = (
+            parsed.netloc.casefold() == index.netloc.casefold()
+            and PurePosixPath(parsed.path).parent == PurePosixPath(index.path).parent
+        )
+        is_html = PurePosixPath(parsed.path).suffix.casefold() in {".htm", ".html"}
+        is_index = parsed.path.casefold() == index.path.casefold()
+        if same_directory and is_html and not is_index:
+            return urllib.parse.urlunsplit(
+                (parsed.scheme, parsed.netloc, parsed.path, parsed.query, "")
+            )
     return None
 
 
@@ -59,15 +75,14 @@ def cache_filename(url: str) -> str:
     # the existing cache. For any other URL, include a digest of the complete
     # URL so two corpora using the same IntraText names cannot silently share
     # the same files.
-    for official_index_url in OFFICIAL_INDEX_URLS:
-        official = urllib.parse.urlsplit(official_index_url)
-        if (
-            parsed.scheme == official.scheme
-            and parsed.netloc == official.netloc
-            and PurePosixPath(parsed.path).parent == PurePosixPath(official.path).parent
-            and not parsed.query
-        ):
-            return safe_name
+    official = urllib.parse.urlsplit(FRENCH.index_url)
+    if (
+        parsed.scheme == official.scheme
+        and parsed.netloc == official.netloc
+        and PurePosixPath(parsed.path).parent == PurePosixPath(official.path).parent
+        and not parsed.query
+    ):
+        return safe_name
 
     normalized = urllib.parse.urlunsplit(parsed._replace(fragment=""))
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]

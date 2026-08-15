@@ -28,6 +28,8 @@ from cec2info import (
     compile_epub,
     compile_info,
     compile_pdf,
+    correct_paragraph_numbers,
+    deduplicate_paragraph_indexes,
     direct_li_title,
     emit_generation_report,
     extract_main_text,
@@ -56,6 +58,29 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class ParseIndexTests(unittest.TestCase):
+    def test_legacy_index_builds_a_hierarchy_from_flat_links(self) -> None:
+        links = [
+            '<p><a href="p1.html">PRIMERA PARTE</a></p>',
+            '<p><a href="p1.html">PRIMERA SECCIÓN</a></p>',
+            '<p><a href="p1.html#chapter">CAPÍTULO PRIMERO</a></p>',
+        ]
+        links.extend(
+            f'<li><a href="p{i}.html">Artículo {i}: Título</a></li>'
+            for i in range(1, 18)
+        )
+
+        roots = parse_index(
+            "".join(links).encode(),
+            "es",
+            "https://www.vatican.va/archive/catechism_sp/index_sp.html",
+        )
+        entries = list(flatten_entries(roots))
+
+        self.assertEqual(len(entries), 20)
+        self.assertEqual(entries[0].title, "PRIMERA PARTE")
+        self.assertIs(entries[1].parent, entries[0])
+        self.assertIs(entries[2].parent, entries[1])
+
     def test_list_helpers_handle_wrappers_and_missing_li(self) -> None:
         soup = BeautifulSoup(
             '<li><span><a href="__P1.HTM">Titre</a></span><ul><li>Enfant</li></ul></li>',
@@ -125,6 +150,35 @@ class TexinfoConversionTests(unittest.TestCase):
         self.assertIn("@cindex 26", result)
         self.assertIn("@cindex 27", result)
         self.assertIn("@cindex 28", result)
+
+    def test_dotted_paragraph_number_is_indexed(self) -> None:
+        result = body_to_texinfo(
+            "Título\n26. Texto português.\n\n27. Continuação.", language="pt"
+        )
+        self.assertEqual(paragraph_index_numbers(result), [26, 27])
+
+    def test_front_matter_number_is_not_indexed(self) -> None:
+        result = body_to_texinfo("1 Introducción.", language="es", index_paragraphs=False)
+        self.assertNotIn("@cindex", result)
+        self.assertIn("@strong{1}", result)
+
+    def test_source_number_corrections_require_matching_neighbors(self) -> None:
+        malformed = "2216. Antes.\n\n2117. Texto.\n\n2218. Depois."
+        legitimate = "2116. Antes.\n\n2117. Texto.\n\n2118. Depois."
+
+        self.assertIn("2217. Texto", correct_paragraph_numbers(malformed, "pt"))
+        self.assertEqual(correct_paragraph_numbers(legitimate, "pt"), legitimate)
+
+    def test_duplicate_embedded_list_indexes_are_removed(self) -> None:
+        texi = (
+            "@cindex 1\n@cindex CIC 1\n@strong{1} Primeiro.\n"
+            "@cindex 1\n@cindex CIC 1\n@strong{1} Lista.\n"
+            "@cindex 2\n@cindex CIC 2\n"
+        )
+        result = deduplicate_paragraph_indexes(texi)
+
+        self.assertEqual(paragraph_index_numbers(result), [1, 2])
+        self.assertEqual(result.count("@cindex CIC 1"), 1)
 
     def test_split_biblical_reference_is_not_indexed(self) -> None:
         result = body_to_texinfo(
@@ -200,6 +254,11 @@ class TexinfoConversionTests(unittest.TestCase):
 
         self.assertIn("@ifinfo\nARTICLE 1\n@end ifinfo", result)
         self.assertIn("Texte avec @@ et @{accolades@}", result)
+
+    def test_latin_uses_texinfo_fallback_localization(self) -> None:
+        texi = render_texinfo([], "https://example.test/latin", "la")
+        self.assertIn("@documentlanguage en", texi)
+        self.assertIn("@settitle Catechismus Catholicae Ecclesiae", texi)
 
     def test_heading_comparison_handles_short_and_partial_titles(self) -> None:
         self.assertFalse(is_repeated_path_heading("I", ["Introduction"]))
@@ -283,6 +342,25 @@ class TexinfoConversionTests(unittest.TestCase):
 
 
 class NavigationAndValidationTests(unittest.TestCase):
+    def test_legacy_source_loads_linked_pages_without_orphan_scan(self) -> None:
+        entry = Entry(title="PRÓLOGO", href="prologue_sp.html", depth=1)
+        index_url = "https://www.vatican.va/archive/catechism_sp/index_sp.html"
+        with patch(
+            "cec2info_parser.fetch",
+            return_value=b"<body><p>1 Texto.</p></body>",
+        ):
+            orphan_count = load_bodies(
+                [entry],
+                index_url,
+                Path("unused-cache"),
+                refresh=False,
+                delay=0,
+                language="es",
+            )
+
+        self.assertEqual(orphan_count, 0)
+        self.assertIn("@cindex 1", entry.body)
+
     def test_clean_page_url_rejects_non_reading_page(self) -> None:
         index = "https://example.test/book/_INDEX.HTM"
         self.assertEqual(
@@ -296,6 +374,14 @@ class NavigationAndValidationTests(unittest.TestCase):
                 "http://www.vatican.va/archive/ENG0015/__P12.HTM",
             ),
             "https://www.vatican.va/archive/ENG0015/__P12.HTM",
+        )
+        self.assertEqual(
+            clean_page_url(
+                "https://www.vatican.va/archive/catechism_sp/index_sp.html",
+                "p1s1c1_sp.html#chapter",
+                "es",
+            ),
+            "https://www.vatican.va/archive/catechism_sp/p1s1c1_sp.html",
         )
 
     def test_next_page_url_finds_orphan_page(self) -> None:
@@ -322,15 +408,15 @@ class NavigationAndValidationTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertTrue(first.endswith("-__P1.HTM"))
 
-    def test_official_cache_keeps_readable_filename(self) -> None:
+    def test_french_cache_keeps_historical_readable_filename(self) -> None:
         self.assertEqual(
             cache_filename("https://www.vatican.va/archive/FRA0013/__P1.HTM"),
             "__P1.HTM",
         )
         self.assertEqual(cache_filename(DEFAULT_INDEX), "_INDEX.HTM")
-        self.assertEqual(
+        self.assertRegex(
             cache_filename("https://www.vatican.va/archive/ENG0015/__P1.HTM"),
-            "__P1.HTM",
+            r"^[0-9a-f]{12}-__P1[.]HTM$",
         )
 
     def test_validation_rejects_missing_and_duplicate_numbers(self) -> None:
@@ -738,8 +824,18 @@ class CliTests(unittest.TestCase):
         self.assertIn(f"cec2info/{VERSION}", USER_AGENT)
 
     def test_unknown_language_profile_is_rejected(self) -> None:
-        with self.assertRaisesRegex(ValueError, "unsupported language 'de'"):
-            get_language_profile("de")
+        with self.assertRaisesRegex(ValueError, "unsupported language 'zz'"):
+            get_language_profile("zz")
+
+    def test_all_official_source_languages_are_cli_choices(self) -> None:
+        self.assertEqual(build_parser().get_default("language"), "fr")
+        expected = {"de", "en", "es", "fr", "it", "la", "pt"}
+        self.assertEqual(set(LANGUAGE_PROFILES), expected)
+        for language in expected:
+            self.assertEqual(
+                build_parser().parse_args(["--language", language]).language,
+                language,
+            )
 
     def test_parser_accepts_all_output_formats(self) -> None:
         args = build_parser().parse_args(
