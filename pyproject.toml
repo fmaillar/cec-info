@@ -46,6 +46,6 @@ branch = true
 source = ["cec2info"]
 
 [tool.coverage.report]
-fail_under = 80
+fail_under = 95
 show_missing = true
 skip_covered = true
