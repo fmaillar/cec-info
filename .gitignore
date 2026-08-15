@@ -1,0 +1,17 @@
+.cec-cache/
+__pycache__/
+*.py[cod]
+
+catechisme.aux
+catechisme.cp
+catechisme.cps
+catechisme.dvi
+catechisme.epub
+catechisme.info
+catechisme.log
+catechisme.pdf
+catechisme.tex
+catechisme.texi
+catechisme.toc
+catechisme_epub_package/
+cp.idx

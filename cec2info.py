@@ -18,6 +18,7 @@ Dépendance Python : BeautifulSoup 4 (paquet Debian python3-bs4).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import re
 import shutil
@@ -35,8 +36,8 @@ from typing import Iterable
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 DEFAULT_INDEX = "https://www.vatican.va/archive/FRA0013/_INDEX.HTM"
-USER_AGENT = "cec2info/3.2 (+GNU Info + TeX structured conversion)"
-PARA_RE = re.compile(r"^\s*(\d{1,4})\s+(.+)$")
+USER_AGENT = "cec2info/3.3 (+GNU Info + TeX structured conversion)"
+PARA_RE = re.compile(r'^\s*(\d{1,4})(?:\s+|(?=["«]))(.+)$')
 SPACE_RE = re.compile(r"[ \t\xa0]+")
 MULTIBLANK_RE = re.compile(r"\n[ \t]*\n(?:[ \t]*\n)+")
 SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -174,7 +175,24 @@ def clean_page_url(index_url: str, href: str) -> str | None:
 def cache_filename(url: str) -> str:
     parsed = urllib.parse.urlsplit(url)
     name = Path(parsed.path).name or "index.html"
-    return SAFE_FILENAME_RE.sub("_", name)
+    safe_name = SAFE_FILENAME_RE.sub("_", name)
+
+    # Conserver les noms historiques pour la source officielle afin de ne pas
+    # invalider le cache existant. Pour toute autre URL, inclure une empreinte
+    # de l'URL complète : deux corpus utilisant les mêmes noms IntraText ne
+    # peuvent ainsi plus partager silencieusement les mêmes fichiers.
+    default = urllib.parse.urlsplit(DEFAULT_INDEX)
+    if (
+        parsed.scheme == default.scheme
+        and parsed.netloc == default.netloc
+        and Path(parsed.path).parent == Path(default.path).parent
+        and not parsed.query
+    ):
+        return safe_name
+
+    normalized = urllib.parse.urlunsplit(parsed._replace(fragment=""))
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+    return f"{digest}-{safe_name}"
 
 
 def fetch(url: str, cache_dir: Path, refresh: bool, delay: float) -> bytes:
@@ -470,7 +488,10 @@ def tex_section_command(entry: Entry) -> str:
     if level is None:
         return f"@subsubheading {escaped}"
     if level == 0:
-        return f"@part {escaped}"
+        # @part ne peut pas être associé à un @node et provoque des
+        # avertissements dans les sorties HTML/EPUB. @unnumbered conserve un
+        # titre de premier niveau sans casser la navigation commune.
+        return f"@unnumbered {escaped}"
 
     commands = {
         1: "chapter",
@@ -524,7 +545,7 @@ def render_texinfo(roots: list[Entry], source_url: str) -> str:
         "@title Catéchisme de l'Église catholique\n"
         "@subtitle Édition GNU Info générée depuis le corpus officiel du Vatican\n"
         "@page\n@vskip 0pt plus 1filll\n@insertcopying\n@end titlepage\n\n"
-        "@iftex\n@contents\n@page\n@end iftex\n\n"
+        "@iftex\n@headings off\n@contents\n@page\n@end iftex\n\n"
         "@node Top\n"
         "@top Catéchisme de l'Église catholique\n\n"
         "Cette édition est générée automatiquement depuis le sommaire et les pages\n"
@@ -572,6 +593,23 @@ def strip_leading_duplicate_title(text: str, title: str) -> str:
             break
     return text
 
+
+def next_page_url(data: bytes, current_url: str) -> str | None:
+    """Retourne la page de lecture indiquée par le lien IntraText « Suivant »."""
+    soup = BeautifulSoup(data, "html.parser")
+    for link in soup.find_all("a", href=True):
+        if normalize_text(link.get_text(" ", strip=True)).casefold() == "suivant":
+            return clean_page_url(current_url, str(link["href"]))
+    return None
+
+
+def append_page_body(entry: Entry, data: bytes) -> None:
+    text = extract_main_text(data)
+    text = strip_leading_duplicate_title(text, entry.title)
+    body = body_to_texinfo(text, entry_path_titles(entry))
+    if body:
+        entry.body = "\n\n".join(part for part in (entry.body, body) if part)
+
 def load_bodies(
     roots: list[Entry],
     index_url: str,
@@ -582,21 +620,109 @@ def load_bodies(
     entries = list(flatten_entries(roots))
     downloadable = [(e, clean_page_url(index_url, e.href)) for e in entries if e.href]
     downloadable = [(e, u) for e, u in downloadable if u]
+    entry_positions = {id(entry): i for i, entry in enumerate(entries)}
+    url_entries = {url: entry for entry, url in downloadable}
+    page_data: dict[str, bytes] = {}
 
     total = len(downloadable)
     for i, (entry, url) in enumerate(downloadable, 1):
         assert url is not None
         eprint(f"[{i:3d}/{total}] {entry.title}")
         data = fetch(url, cache_dir, refresh=refresh, delay=delay)
-        text = extract_main_text(data)
-        text = strip_leading_duplicate_title(text, entry.title)
-        entry.body = body_to_texinfo(text, entry_path_titles(entry))
+        page_data[url] = data
+        append_page_body(entry, data)
+
+    # Certaines pages de lecture existent dans la chaîne Précédent/Suivant
+    # mais sont absentes du sommaire (_P15 et _P74 dans le corpus français).
+    # Suivre ces liens comble les trous sans supposer le système de numérotation
+    # interne d'IntraText.
+    orphan_urls: set[str] = set()
+    for source_entry, source_url in downloadable:
+        assert source_url is not None
+        current_url = source_url
+        current_data = page_data[source_url]
+        orphan_chain: list[tuple[str, bytes]] = []
+        seen_chain = {source_url}
+
+        while True:
+            following = next_page_url(current_data, current_url)
+            if following is None or following in seen_chain:
+                break
+            if following in url_entries:
+                break
+            if following in orphan_urls:
+                break
+
+            eprint(f"[page orpheline] {following}")
+            orphan_data = fetch(
+                following,
+                cache_dir,
+                refresh=refresh,
+                delay=delay,
+            )
+            orphan_urls.add(following)
+            orphan_chain.append((following, orphan_data))
+            seen_chain.add(following)
+            current_url, current_data = following, orphan_data
+
+        if not orphan_chain:
+            continue
+
+        following = next_page_url(current_data, current_url)
+        next_known_entry = url_entries.get(following) if following else None
+        source_pos = entry_positions[id(source_entry)]
+        next_pos = (
+            entry_positions[id(next_known_entry)]
+            if next_known_entry is not None
+            else len(entries)
+        )
+        empty_entries = [
+            entry
+            for entry in entries[source_pos + 1 : next_pos]
+            if entry.href is None and not entry.body
+        ]
+
+        for _, orphan_data in orphan_chain:
+            # Une entrée sans lien située exactement dans le trou reçoit la
+            # page (cas de la deuxième section, § 185). Sinon la page complète
+            # logiquement l'entrée précédente (cas de l'EN BREF, § 2075).
+            target = empty_entries.pop(0) if empty_entries else source_entry
+            append_page_body(target, orphan_data)
+
+
+def validate_paragraph_indexes(texi: str, expected_last: int) -> None:
+    if expected_last <= 0:
+        return
+
+    numbers = [
+        int(number)
+        for number in re.findall(r"(?m)^@cindex (\d+)$", texi)
+    ]
+    counts: dict[int, int] = {}
+    for number in numbers:
+        counts[number] = counts.get(number, 0) + 1
+
+    missing = [number for number in range(1, expected_last + 1) if number not in counts]
+    duplicates = [number for number, count in counts.items() if count > 1]
+    unexpected = [number for number in counts if not 1 <= number <= expected_last]
+    if missing or duplicates or unexpected:
+        details = []
+        if missing:
+            details.append(f"absents: {missing}")
+        if duplicates:
+            details.append(f"doublons: {duplicates}")
+        if unexpected:
+            details.append(f"hors plage: {unexpected}")
+        raise RuntimeError("Index des paragraphes incomplet ou invalide (" + "; ".join(details) + ")")
+
+    eprint(f"Paragraphes 1 à {expected_last} présents une fois chacun.")
 
 
 def compile_info(texi_path: Path, info_path: Path) -> None:
     makeinfo = shutil.which("makeinfo")
     if makeinfo is None:
         raise RuntimeError("makeinfo est introuvable. Installez le paquet Debian 'texinfo'.")
+    info_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [makeinfo, "--no-split", "--output", str(info_path), str(texi_path)],
         check=True,
@@ -607,20 +733,13 @@ def compile_pdf(texi_path: Path, pdf_path: Path) -> None:
     texi2dvi = shutil.which("texi2dvi")
     if texi2dvi is None:
         raise RuntimeError("texi2dvi est introuvable. Installez Texinfo/TeX.")
-    # Un ancien .toc provenant d'une compilation interrompue peut rendre
-    # l'itération suivante invalide. Nettoyage des auxiliaires Texinfo/TeX.
-    stem = texi_path.with_suffix("")
-    for suffix in (".toc", ".aux", ".cp", ".cps", ".fn", ".fns",
-                   ".ky", ".kys", ".pg", ".pgs", ".vr", ".vrs",
-                   ".tp", ".tps", ".log"):
-        aux = Path(str(stem) + suffix)
-        if aux.exists():
-            aux.unlink()
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
 
     subprocess.run(
         [
             texi2dvi,
             "--batch",
+            "--build=clean",
             "--dvipdf",
             "--output",
             str(pdf_path.resolve()),
@@ -635,6 +754,7 @@ def compile_epub(texi_path: Path, epub_path: Path) -> None:
     makeinfo = shutil.which("makeinfo")
     if makeinfo is None:
         raise RuntimeError("makeinfo est introuvable. Installez le paquet Debian 'texinfo'.")
+    epub_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [makeinfo, "--epub3", "--output", str(epub_path), str(texi_path)],
         check=True,
@@ -680,6 +800,12 @@ def main() -> int:
         default=0.05,
         help="pause entre téléchargements (secondes, défaut: 0.05)",
     )
+    parser.add_argument(
+        "--expected-last-paragraph",
+        type=int,
+        default=2865,
+        help="dernier paragraphe attendu pour la validation (0 pour désactiver)",
+    )
     args = parser.parse_args()
 
     eprint(f"Téléchargement du sommaire : {args.index_url}")
@@ -690,6 +816,8 @@ def main() -> int:
     load_bodies(roots, args.index_url, args.cache_dir, refresh=args.refresh, delay=args.delay)
 
     texi = render_texinfo(roots, args.index_url)
+    validate_paragraph_indexes(texi, args.expected_last_paragraph)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(texi, encoding="utf-8")
     eprint(f"Texinfo écrit : {args.output}")
 

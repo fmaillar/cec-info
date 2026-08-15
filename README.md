@@ -1,8 +1,8 @@
 # CEC → GNU Info
 
 Convertit le **Catéchisme de l'Église catholique** publié par le Vatican
-(IntraText, version française) en un manuel **GNU Texinfo / Info** lisible dans
-Emacs.
+(IntraText, version française) en manuel **GNU Texinfo / Info**, PDF et EPUB 3.
+La sortie Info est directement lisible dans Emacs.
 
 ## Dépendances (Debian)
 
@@ -39,11 +39,21 @@ make epub
 
 Les tests locaux se lancent avec `make test`.
 
+La génération vérifie que les paragraphes 1 à 2865 sont tous présents une
+seule fois avant de compiler les formats finaux. Les pages IntraText absentes
+du sommaire sont récupérées automatiquement grâce aux liens `Suivant`.
+Pour un autre corpus, adaptez la borne avec
+`--expected-last-paragraph`, ou utilisez la valeur `0` pour désactiver ce
+contrôle.
+
 Pour forcer un nouveau téléchargement :
 
 ```sh
-python3 cec2info.py --refresh --compile --pdf --epub
+make refresh
 ```
+
+`make clean` retire les sorties et auxiliaires de compilation ;
+`make distclean` retire aussi le cache HTML et les caches Python.
 
 ## Lecture dans Emacs
 
