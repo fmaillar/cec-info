@@ -1,0 +1,669 @@
+#!/usr/bin/env python3
+"""
+cec2info.py — Convertit le Catéchisme de l'Église catholique (Vatican/IntraText)
+en un manuel GNU Texinfo / Info.
+
+Source officielle par défaut :
+https://www.vatican.va/archive/FRA0013/_INDEX.HTM
+
+Principe :
+- lit le sommaire officiel pour reconstruire l'arbre du CEC ;
+- utilise les pages "__P*.HTM", variantes IntraText sans concordances ;
+- crée un @node GNU Info par entrée du sommaire ;
+- indexe les numéros de paragraphes du CEC ;
+- peut appeler makeinfo pour produire catechisme.info.
+
+Dépendance Python : BeautifulSoup 4 (paquet Debian python3-bs4).
+"""
+from __future__ import annotations
+
+import argparse
+import html
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import unicodedata
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable
+
+from bs4 import BeautifulSoup, NavigableString, Tag
+
+DEFAULT_INDEX = "https://www.vatican.va/archive/FRA0013/_INDEX.HTM"
+USER_AGENT = "cec2info/3.2 (+GNU Info + TeX structured conversion)"
+PARA_RE = re.compile(r"^\s*(\d{1,4})\s+(.+)$")
+SPACE_RE = re.compile(r"[ \t\xa0]+")
+MULTIBLANK_RE = re.compile(r"\n[ \t]*\n(?:[ \t]*\n)+")
+SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+@dataclass
+class Entry:
+    title: str
+    href: str | None
+    depth: int
+    parent: "Entry | None" = None
+    children: list["Entry"] = field(default_factory=list)
+    node: str = ""
+    body: str = ""
+
+    @property
+    def up_node(self) -> str:
+        return self.parent.node if self.parent else "Top"
+
+
+def eprint(*args: object) -> None:
+    print(*args, file=sys.stderr)
+
+
+def texi_escape(text: str) -> str:
+    return text.replace("@", "@@").replace("{", "@{").replace("}", "@}")
+
+
+def normalize_text(text: str) -> str:
+    text = html.unescape(text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = SPACE_RE.sub(" ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = MULTIBLANK_RE.sub("\n\n", text)
+    return text.strip()
+
+
+def direct_li_title(li: Tag) -> str:
+    clone = BeautifulSoup(str(li), "html.parser")
+    root = clone.find("li")
+    if root is None:
+        return ""
+    for nested in root.find_all(["ul", "ol"]):
+        nested.decompose()
+    return normalize_text(root.get_text(" ", strip=True))
+
+
+def first_direct_link(li: Tag) -> str | None:
+    for child in li.children:
+        if isinstance(child, Tag) and child.name == "a" and child.get("href"):
+            return str(child["href"])
+        if isinstance(child, Tag) and child.name not in {"ul", "ol"}:
+            a = child.find("a", href=True)
+            if a is not None:
+                return str(a["href"])
+    return None
+
+
+def flatten_entries(roots: Iterable[Entry]) -> Iterable[Entry]:
+    for entry in roots:
+        yield entry
+        yield from flatten_entries(entry.children)
+
+
+def parse_index(data: bytes) -> list[Entry]:
+    soup = BeautifulSoup(data, "html.parser")
+    lists = soup.find_all(["ul", "ol"])
+    if not lists:
+        raise RuntimeError("Aucune liste trouvée dans le sommaire Vatican.")
+
+    root_list = max(lists, key=lambda tag: len(tag.find_all("li")))
+    roots: list[Entry] = []
+
+    def walk(list_tag: Tag, parent: Entry | None, depth: int) -> None:
+        for li in list_tag.find_all("li", recursive=False):
+            title = direct_li_title(li)
+            if not title:
+                continue
+            entry = Entry(
+                title=title,
+                href=first_direct_link(li),
+                depth=depth,
+                parent=parent,
+            )
+            if parent is None:
+                roots.append(entry)
+            else:
+                parent.children.append(entry)
+            for nested in li.find_all(["ul", "ol"], recursive=False):
+                walk(nested, entry, depth + 1)
+
+    walk(root_list, None, 1)
+    if len(list(flatten_entries(roots))) < 20:
+        raise RuntimeError(
+            "Le sommaire détecté semble anormalement petit ; "
+            "la structure HTML du Vatican a peut-être changé."
+        )
+    return roots
+
+
+def assign_nodes(roots: list[Entry]) -> list[Entry]:
+    entries = list(flatten_entries(roots))
+    for i, entry in enumerate(entries, 1):
+        entry.node = f"CEC-{i:04d}"
+    return entries
+
+
+def clean_page_url(index_url: str, href: str) -> str | None:
+    absolute = urllib.parse.urljoin(index_url, href)
+    parsed = urllib.parse.urlsplit(absolute)
+    name = Path(parsed.path).name
+
+    if re.fullmatch(r"_P[A-Za-z0-9]+\.HTM?", name, re.IGNORECASE):
+        clean_name = "_" + name
+        path = str(Path(parsed.path).with_name(clean_name))
+        return urllib.parse.urlunsplit(
+            (parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment)
+        )
+    if re.fullmatch(r"__P[A-Za-z0-9]+\.HTM?", name, re.IGNORECASE):
+        return absolute
+    return None
+
+
+def cache_filename(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    name = Path(parsed.path).name or "index.html"
+    return SAFE_FILENAME_RE.sub("_", name)
+
+
+def fetch(url: str, cache_dir: Path, refresh: bool, delay: float) -> bytes:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    target = cache_dir / cache_filename(url)
+    if target.exists() and not refresh:
+        return target.read_bytes()
+
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = response.read()
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Échec du téléchargement de {url}: {exc}") from exc
+
+    target.write_bytes(data)
+    if delay > 0:
+        time.sleep(delay)
+    return data
+
+
+def text_regions_from_html(data: bytes) -> list[str]:
+    soup = BeautifulSoup(data, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+
+    marker = "<<<CEC-HR>>>"
+    for hr in soup.find_all("hr"):
+        hr.replace_with(NavigableString(f"\n\n{marker}\n\n"))
+    for br in soup.find_all("br"):
+        br.replace_with(NavigableString("\n"))
+
+    for tag in soup.find_all(
+        ["p", "div", "li", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "center"]
+    ):
+        tag.insert_before(NavigableString("\n"))
+        tag.insert_after(NavigableString("\n"))
+
+    body = soup.body or soup
+    raw = body.get_text(" ", strip=False)
+    parts = raw.split(marker)
+    return [normalize_text(p) for p in parts if normalize_text(p)]
+
+
+def boilerplate_penalty(text: str) -> int:
+    low = text.casefold()
+    penalty = 0
+    for phrase in (
+        "intratext - lecture du texte",
+        "copyright © libreria editrice vaticana",
+        "précédent",
+        "suivant",
+        "aide",
+        "le saint-siège",
+    ):
+        if phrase in low:
+            penalty += 5000
+    return penalty
+
+
+def content_score(text: str) -> int:
+    numbered = len(re.findall(r"(?m)^\s*\d{1,4}\s+", text))
+    return len(text) + numbered * 1000 - boilerplate_penalty(text)
+
+
+def extract_main_text(data: bytes) -> str:
+    regions = text_regions_from_html(data)
+    if not regions:
+        return ""
+    candidate = max(regions, key=content_score)
+
+    lines: list[str] = []
+    for line in candidate.splitlines():
+        stripped = line.strip()
+        folded = stripped.casefold()
+        if not stripped:
+            lines.append("")
+            continue
+        if folded in {
+            "catéchisme de l'église catholique",
+            "intratext - lecture du texte",
+            "précédent - suivant",
+            "précédent",
+            "suivant",
+        }:
+            continue
+        if folded.startswith("copyright © libreria editrice vaticana"):
+            continue
+        lines.append(stripped)
+    return normalize_text("\n".join(lines))
+
+
+def looks_like_subheading(line: str, next_line: str | None) -> bool:
+    if not line or len(line) > 100:
+        return False
+    if PARA_RE.match(line):
+        return False
+    if line[-1:] in ".;:!?»":
+        return False
+    if next_line and PARA_RE.match(next_line):
+        return True
+    return False
+
+
+def heading_key(text: str) -> str:
+    """Normalise un titre pour comparer les en-têtes Vatican et le sommaire."""
+    text = unicodedata.normalize("NFKD", html.unescape(text))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.casefold()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
+
+
+def entry_path_titles(entry: Entry) -> list[str]:
+    titles: list[str] = []
+    cur: Entry | None = entry
+    while cur is not None:
+        titles.append(cur.title)
+        cur = cur.parent
+    titles.reverse()
+    return titles
+
+
+def is_repeated_path_heading(text: str, path_titles: list[str]) -> bool:
+    """Détecte un morceau de titre déjà représenté par la structure du sommaire."""
+    key = heading_key(text)
+    if not key or len(key) < 3:
+        return False
+    for title in path_titles:
+        tkey = heading_key(title)
+        if key == tkey or (len(key) >= 8 and key in tkey) or (len(tkey) >= 8 and tkey in key):
+            return True
+    return False
+
+
+def body_to_texinfo(text: str, path_titles: list[str] | None = None) -> str:
+    if not text:
+        return ""
+
+    text = re.sub(
+        r"(?<!\n)(?<!\d)\s+(\d{1,4})\s+(?=[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŒ«\"] )".replace(" ]", "]"),
+        r"\n\n\1 ",
+        text,
+    )
+    paragraphs = [
+        normalize_text(p) for p in re.split(r"\n\s*\n", text) if normalize_text(p)
+    ]
+    out: list[str] = []
+    before_first_number = True
+    path_titles = path_titles or []
+
+    for para in paragraphs:
+        # Les retours simples du vieux HTML IntraText sont de la mise en page,
+        # pas des frontières de paragraphe. GNU Info fera lui-même le reflow.
+        part = normalize_text(" ".join(para.splitlines()))
+        match = PARA_RE.match(part)
+        if match:
+            before_first_number = False
+            number, rest = match.groups()
+            out.append(f"@cindex {number}")
+            out.append(f"@cindex CEC {number}")
+            out.append(f"@strong{{{number}}} {texi_escape(rest)}")
+            out.append("")
+            continue
+
+        escaped = texi_escape(part)
+        # Le HTML Vatican répète souvent au début d'une page les titres du
+        # chapitre/article courant. Info peut les garder comme contexte ; en
+        # sortie TeX ils seraient redondants avec @chapter/@section/... .
+        if before_first_number and is_repeated_path_heading(part, path_titles):
+            out.extend(["@ifinfo", escaped, "@end ifinfo", ""])
+        else:
+            out.extend([escaped, ""])
+
+    return "\n".join(out).rstrip()
+
+def sibling_pointers(entry: Entry, roots: list[Entry]) -> tuple[str, str]:
+    siblings = entry.parent.children if entry.parent else roots
+    idx = siblings.index(entry)
+    prev_node = siblings[idx - 1].node if idx > 0 else ""
+    next_node = siblings[idx + 1].node if idx + 1 < len(siblings) else ""
+    return next_node, prev_node
+
+
+def menu_label(title: str) -> str:
+    # ':' sépare le libellé du nom de nœud dans la syntaxe @menu.
+    # On le remplace seulement dans l'affichage du menu.
+    return texi_escape(title.replace(":", " —"))
+
+
+def emit_menu(children: list[Entry]) -> str:
+    if not children:
+        return ""
+    lines = ["@menu"]
+    for child in children:
+        lines.append(f"* {menu_label(child.title)}: {child.node}.")
+    lines.append("@end menu")
+    return "\n".join(lines)
+
+
+PART_RE = re.compile(r"^(PREMIERE|DEUXIEME|TROISIEME|QUATRIEME)\s+PARTIE\b", re.IGNORECASE)
+SECTION_RE = re.compile(r"^(PREMIERE|DEUXIEME|TROISIEME|QUATRIEME)\s+SECTION\b", re.IGNORECASE)
+CHAPTER_RE = re.compile(r"^CHAPITRE\b", re.IGNORECASE)
+ARTICLE_RE = re.compile(r"^ARTICLE\s+\d+\b", re.IGNORECASE)
+PARAGRAPH_RE = re.compile(r"^PARAGRAPHE\s+\d+\b", re.IGNORECASE)
+ROMAN_RE = re.compile(r"^[IVXLCDM]+[.]\s+", re.IGNORECASE)
+
+
+def has_ancestor_matching(entry: Entry, pattern: re.Pattern[str]) -> bool:
+    cur = entry.parent
+    while cur is not None:
+        if pattern.search(cur.title.strip()):
+            return True
+        cur = cur.parent
+    return False
+
+
+def tex_semantic_level(title: str) -> int | None:
+    """Niveau TeX souhaité: 0=part, 1=chapter, ..., 4=subsubsection."""
+    title = title.strip()
+    if PART_RE.search(title):
+        return 0
+    if SECTION_RE.search(title):
+        return 1
+    if CHAPTER_RE.search(title):
+        return 2
+    if ARTICLE_RE.search(title):
+        return 3
+    if PARAGRAPH_RE.search(title):
+        return 4
+    if ROMAN_RE.search(title):
+        return 4
+    return None
+
+
+def effective_tex_level(entry: Entry) -> int | None:
+    """Niveau Texinfo réellement utilisé pour cette entrée.
+
+    La structure Vatican peut omettre certains niveaux sémantiques.  Le niveau
+    effectif est donc calculé récursivement à partir du niveau effectivement
+    utilisé par le parent, et non du niveau théorique de son titre.  Cela évite
+    les numérotations Texinfo du type 2.0.1.
+    """
+    title = entry.title.strip()
+    folded = heading_key(title)
+    desired = tex_semantic_level(title)
+
+    # Titres non numérotés / intertitres : ils ne participent pas à la chaîne
+    # de compteurs.
+    if folded in {"liste des sigles", "prologue", "en bref"} or desired is None:
+        return None
+
+    # @part ne fait pas partie de la numérotation chapter/section/...
+    if desired == 0:
+        return 0
+
+    # Cherche le premier ancêtre qui possède lui-même un niveau effectif.
+    parent = entry.parent
+    parent_level: int | None = None
+    while parent is not None:
+        level = effective_tex_level(parent)
+        if level is not None:
+            parent_level = level
+            break
+        parent = parent.parent
+
+    # À la racine, le premier niveau numéroté est toujours @chapter.
+    if parent_level is None or parent_level == 0:
+        return 1
+
+    # Ne jamais sauter de niveau.  Si le niveau sémantique demandé est plus
+    # profond que ce que la chaîne réelle permet, on le remonte juste sous le
+    # parent effectif.
+    return min(desired, parent_level + 1)
+
+
+def tex_section_command(entry: Entry) -> str:
+    """Commande de sectionnement TeX fondée sur le niveau effectif de l'arbre."""
+    title = entry.title.strip()
+    escaped = texi_escape(title)
+    folded = heading_key(title)
+
+    if folded in {"liste des sigles", "prologue"}:
+        return f"@unnumbered {escaped}"
+    if folded == "en bref":
+        return f"@subsubheading {escaped}"
+
+    level = effective_tex_level(entry)
+    if level is None:
+        return f"@subsubheading {escaped}"
+    if level == 0:
+        return f"@part {escaped}"
+
+    commands = {
+        1: "chapter",
+        2: "section",
+        3: "subsection",
+        4: "subsubsection",
+    }
+    return f"@{commands[level]} {escaped}"
+
+
+def conditional_entry_heading(entry: Entry) -> str:
+    """Info utilise @heading ; les autres formats utilisent la vraie sectionisation."""
+    return "\n".join(
+        [
+            "@ifinfo",
+            f"@heading {texi_escape(entry.title)}",
+            "@end ifinfo",
+            "@ifnotinfo",
+            tex_section_command(entry),
+            "@end ifnotinfo",
+        ]
+    )
+
+
+def render_texinfo(roots: list[Entry], source_url: str) -> str:
+    entries = list(flatten_entries(roots))
+    chunks: list[str] = []
+    top_menu = emit_menu(roots)
+    if top_menu:
+        top_menu = top_menu[:-len("@end menu")] + "* Index::\n@end menu"
+    else:
+        top_menu = "@menu\n* Index::\n@end menu"
+
+    chunks.append(
+        "\\input texinfo\n"
+        "@documentencoding UTF-8\n"
+        "@documentlanguage fr\n"
+        "@setfilename catechisme.info\n"
+        "@settitle Catéchisme de l'Église catholique\n\n"
+        "@dircategory Religion\n"
+        "@direntry\n"
+        "* Catéchisme: (catechisme). Catéchisme de l'Église catholique.\n"
+        "@end direntry\n\n"
+        "@copying\n"
+        "Conversion personnelle au format GNU Info à partir du texte publié par\n"
+        "le Saint-Siège / Libreria Editrice Vaticana.\n"
+        f"Source : @uref{{{texi_escape(source_url)}}}.\n"
+        "Le texte source demeure soumis aux droits indiqués par son éditeur.\n"
+        "@end copying\n\n"
+        "@titlepage\n"
+        "@title Catéchisme de l'Église catholique\n"
+        "@subtitle Édition GNU Info générée depuis le corpus officiel du Vatican\n"
+        "@page\n@vskip 0pt plus 1filll\n@insertcopying\n@end titlepage\n\n"
+        "@iftex\n@contents\n@page\n@end iftex\n\n"
+        "@node Top\n"
+        "@top Catéchisme de l'Église catholique\n\n"
+        "Cette édition est générée automatiquement depuis le sommaire et les pages\n"
+        "de lecture IntraText du Vatican.\n\n"
+        "Navigation : utilisez @kbd{n} / @kbd{p} / @kbd{u}, @kbd{m} pour un menu,\n"
+        "@kbd{i} pour l'index des numéros du CEC, et @kbd{s} pour une recherche\n"
+        "plein texte.\n\n"
+        f"{top_menu}\n"
+    )
+
+    for entry in entries:
+        next_node, prev_node = sibling_pointers(entry, roots)
+        chunks.append(
+            "\n".join(
+                [
+                    "",
+                    f"@node {entry.node}, {next_node}, {prev_node}, {entry.up_node}",
+                    conditional_entry_heading(entry),
+                    "",
+                    emit_menu(entry.children),
+                    "",
+                    entry.body,
+                    "",
+                ]
+            )
+        )
+
+    chunks.append(
+        "\n@node Index\n"
+        "@unnumbered Index des paragraphes du CEC\n"
+        "@printindex cp\n\n"
+        "@bye\n"
+    )
+    return "\n".join(chunks)
+
+def strip_leading_duplicate_title(text: str, title: str) -> str:
+    text = text.lstrip()
+    target = normalize_text(title).casefold()
+    lines = text.splitlines()
+    for n in range(1, min(5, len(lines)) + 1):
+        candidate = normalize_text(" ".join(lines[:n])).casefold()
+        if candidate == target:
+            return "\n".join(lines[n:]).lstrip()
+        if not target.startswith(candidate):
+            break
+    return text
+
+def load_bodies(
+    roots: list[Entry],
+    index_url: str,
+    cache_dir: Path,
+    refresh: bool,
+    delay: float,
+) -> None:
+    entries = list(flatten_entries(roots))
+    downloadable = [(e, clean_page_url(index_url, e.href)) for e in entries if e.href]
+    downloadable = [(e, u) for e, u in downloadable if u]
+
+    total = len(downloadable)
+    for i, (entry, url) in enumerate(downloadable, 1):
+        assert url is not None
+        eprint(f"[{i:3d}/{total}] {entry.title}")
+        data = fetch(url, cache_dir, refresh=refresh, delay=delay)
+        text = extract_main_text(data)
+        text = strip_leading_duplicate_title(text, entry.title)
+        entry.body = body_to_texinfo(text, entry_path_titles(entry))
+
+
+def compile_info(texi_path: Path, info_path: Path) -> None:
+    makeinfo = shutil.which("makeinfo")
+    if makeinfo is None:
+        raise RuntimeError("makeinfo est introuvable. Installez le paquet Debian 'texinfo'.")
+    subprocess.run(
+        [makeinfo, "--no-split", "--output", str(info_path), str(texi_path)],
+        check=True,
+    )
+
+
+def compile_pdf(texi_path: Path, pdf_path: Path) -> None:
+    texi2pdf = shutil.which("texi2pdf")
+    if texi2pdf is None:
+        raise RuntimeError("texi2pdf est introuvable. Installez Texinfo/TeX.")
+    # Un ancien .toc provenant d'une compilation interrompue peut rendre
+    # l'itération suivante invalide. Nettoyage des auxiliaires Texinfo/TeX.
+    stem = texi_path.with_suffix("")
+    for suffix in (".toc", ".aux", ".cp", ".cps", ".fn", ".fns",
+                   ".ky", ".kys", ".pg", ".pgs", ".vr", ".vrs",
+                   ".tp", ".tps", ".log"):
+        aux = Path(str(stem) + suffix)
+        if aux.exists():
+            aux.unlink()
+
+    subprocess.run(
+        [texi2pdf, "--batch", "--output", str(pdf_path), str(texi_path)],
+        check=True,
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Convertit le Catéchisme officiel du Vatican en GNU Texinfo/Info."
+    )
+    parser.add_argument("--index-url", default=DEFAULT_INDEX)
+    parser.add_argument("--cache-dir", type=Path, default=Path(".cec-cache"))
+    parser.add_argument("-o", "--output", type=Path, default=Path("catechisme.texi"))
+    parser.add_argument(
+        "--info",
+        type=Path,
+        default=Path("catechisme.info"),
+        help="fichier Info produit avec --compile",
+    )
+    parser.add_argument("--compile", action="store_true", help="appelle makeinfo après génération du .texi")
+    parser.add_argument("--pdf", action="store_true", help="appelle texi2pdf après génération du .texi")
+    parser.add_argument(
+        "--pdf-output",
+        type=Path,
+        default=Path("catechisme.pdf"),
+        help="fichier PDF produit avec --pdf",
+    )
+    parser.add_argument("--refresh", action="store_true", help="retélécharge les pages même si elles sont en cache")
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.05,
+        help="pause entre téléchargements (secondes, défaut: 0.05)",
+    )
+    args = parser.parse_args()
+
+    eprint(f"Téléchargement du sommaire : {args.index_url}")
+    index_data = fetch(args.index_url, args.cache_dir, refresh=args.refresh, delay=args.delay)
+    roots = parse_index(index_data)
+    entries = assign_nodes(roots)
+    eprint(f"{len(entries)} entrées de sommaire détectées.")
+    load_bodies(roots, args.index_url, args.cache_dir, refresh=args.refresh, delay=args.delay)
+
+    texi = render_texinfo(roots, args.index_url)
+    args.output.write_text(texi, encoding="utf-8")
+    eprint(f"Texinfo écrit : {args.output}")
+
+    if args.compile:
+        compile_info(args.output, args.info)
+        eprint(f"Info écrit : {args.info}")
+
+    if args.pdf:
+        compile_pdf(args.output, args.pdf_output)
+        eprint(f"PDF écrit : {args.pdf_output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
