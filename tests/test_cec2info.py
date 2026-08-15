@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from cec2info import (
@@ -18,6 +19,7 @@ from cec2info import (
     compile_info,
     compile_pdf,
     emit_generation_report,
+    fetch,
     flatten_entries,
     load_bodies,
     next_page_url,
@@ -113,6 +115,99 @@ class NavigationAndValidationTests(unittest.TestCase):
         self.assertIn("@cindex 1", source.body)
         self.assertIn("@cindex 2", orphan_entry.body)
         self.assertIn("@cindex 3", following.body)
+
+
+class FetchTests(unittest.TestCase):
+    url = "https://example.test/book/__P1.HTM"
+
+    def test_nonempty_cache_avoids_network(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache_dir = Path(directory)
+            target = cache_dir / cache_filename(self.url)
+            target.write_bytes(b"cached")
+
+            with patch("cec2info.urllib.request.urlopen") as urlopen:
+                data = fetch(self.url, cache_dir, refresh=False, delay=0)
+
+            self.assertEqual(data, b"cached")
+            urlopen.assert_not_called()
+
+    def test_empty_cache_is_replaced_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache_dir = Path(directory)
+            target = cache_dir / cache_filename(self.url)
+            target.write_bytes(b"")
+
+            with patch(
+                "cec2info.urllib.request.urlopen",
+                return_value=io.BytesIO(b"<html>contenu</html>"),
+            ):
+                data = fetch(self.url, cache_dir, refresh=False, delay=0)
+
+            self.assertEqual(data, b"<html>contenu</html>")
+            self.assertEqual(target.read_bytes(), data)
+            self.assertFalse(any(cache_dir.glob(f".{target.name}.*")))
+
+    def test_temporary_error_is_retried_with_backoff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch(
+                    "cec2info.urllib.request.urlopen",
+                    side_effect=[URLError("temporaire"), io.BytesIO(b"ok")],
+                ) as urlopen,
+                patch("cec2info.time.sleep") as sleep,
+            ):
+                data = fetch(
+                    self.url,
+                    Path(directory),
+                    refresh=True,
+                    delay=0,
+                    retries=1,
+                    retry_backoff=0.25,
+                )
+
+            self.assertEqual(data, b"ok")
+            self.assertEqual(urlopen.call_count, 2)
+            sleep.assert_called_once_with(0.25)
+
+    def test_permanent_http_error_is_not_retried(self) -> None:
+        error = HTTPError(self.url, 404, "introuvable", {}, None)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch(
+                "cec2info.urllib.request.urlopen",
+                side_effect=error,
+            ) as urlopen:
+                with self.assertRaisesRegex(RuntimeError, "1 tentative"):
+                    fetch(
+                        self.url,
+                        Path(directory),
+                        refresh=True,
+                        delay=0,
+                        retries=3,
+                    )
+
+            urlopen.assert_called_once()
+
+    def test_failed_refresh_preserves_previous_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache_dir = Path(directory)
+            target = cache_dir / cache_filename(self.url)
+            target.write_bytes(b"ancien contenu")
+
+            with patch(
+                "cec2info.urllib.request.urlopen",
+                return_value=io.BytesIO(b""),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "réponse vide"):
+                    fetch(
+                        self.url,
+                        cache_dir,
+                        refresh=True,
+                        delay=0,
+                        retries=0,
+                    )
+
+            self.assertEqual(target.read_bytes(), b"ancien contenu")
 
 
 class GenerationReportTests(unittest.TestCase):

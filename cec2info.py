@@ -21,10 +21,12 @@ import argparse
 import hashlib
 import html
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -42,6 +44,7 @@ PARA_RE = re.compile(r'^\s*(\d{1,4})(?:\s+|(?=["«]))(.+)$')
 SPACE_RE = re.compile(r"[ \t\xa0]+")
 MULTIBLANK_RE = re.compile(r"\n[ \t]*\n(?:[ \t]*\n)+")
 SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 
 
 @dataclass
@@ -196,10 +199,44 @@ def cache_filename(url: str) -> str:
     return f"{digest}-{safe_name}"
 
 
-def fetch(url: str, cache_dir: Path, refresh: bool, delay: float) -> bytes:
+def write_cache_atomically(target: Path, data: bytes) -> None:
+    """Remplace un fichier de cache sans exposer de contenu partiel."""
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            delete=False,
+        ) as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+            temporary = Path(stream.name)
+        temporary.replace(target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def fetch(
+    url: str,
+    cache_dir: Path,
+    refresh: bool,
+    delay: float,
+    *,
+    timeout: float = 30.0,
+    retries: int = 2,
+    retry_backoff: float = 0.5,
+) -> bytes:
+    if timeout <= 0:
+        raise ValueError("timeout doit être strictement positif")
+    if retries < 0 or retry_backoff < 0:
+        raise ValueError("retries et retry_backoff doivent être positifs ou nuls")
+
     cache_dir.mkdir(parents=True, exist_ok=True)
     target = cache_dir / cache_filename(url)
-    if target.exists() and not refresh:
+    if target.exists() and target.stat().st_size > 0 and not refresh:
         return target.read_bytes()
 
     req = urllib.request.Request(
@@ -209,16 +246,33 @@ def fetch(url: str, cache_dir: Path, refresh: bool, delay: float) -> bytes:
             "Accept": "text/html,application/xhtml+xml",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            data = response.read()
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Échec du téléchargement de {url}: {exc}") from exc
+    last_error: BaseException | None = None
+    attempts = retries + 1
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                data = response.read()
+            if not data.strip():
+                raise ValueError("réponse vide")
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code not in RETRYABLE_HTTP_STATUS:
+                break
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            last_error = exc
+        else:
+            write_cache_atomically(target, data)
+            if delay > 0:
+                time.sleep(delay)
+            return data
 
-    target.write_bytes(data)
-    if delay > 0:
-        time.sleep(delay)
-    return data
+        if attempt + 1 < attempts and retry_backoff > 0:
+            time.sleep(retry_backoff * (2**attempt))
+
+    detail = str(last_error) if last_error is not None else "erreur inconnue"
+    raise RuntimeError(
+        f"Échec du téléchargement de {url} après {attempt + 1} tentative(s): {detail}"
+    ) from last_error
 
 
 def text_regions_from_html(data: bytes) -> list[str]:
