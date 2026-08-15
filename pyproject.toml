@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cec2info"
 version = "3.5.0"
-description = "Convertit le Catéchisme du Vatican en GNU Info, PDF et EPUB 3"
+description = "Convert the Vatican's French Catechism to GNU Info, PDF, and EPUB 3"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -32,6 +32,12 @@ dev = [
 
 [project.scripts]
 cec2info = "cec2info:main"
+
+[project.urls]
+Homepage = "https://github.com/fmaillar/cec-info"
+Repository = "https://github.com/fmaillar/cec-info"
+Issues = "https://github.com/fmaillar/cec-info/issues"
+Changelog = "https://github.com/fmaillar/cec-info/blob/master/CHANGELOG.md"
 
 [tool.setuptools]
 py-modules = [
