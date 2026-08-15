@@ -15,6 +15,15 @@ sudo apt install python3-bs4 texinfo
 La génération PDF demande également une installation TeX fournissant
 `texi2dvi` et un convertisseur DVI vers PDF (par exemple `texlive` sur Debian).
 
+Le projet peut aussi être installé dans un environnement Python :
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+cec2info --help
+```
+
 ## Utilisation
 
 ```sh
@@ -27,7 +36,8 @@ Le script crée :
 - `catechisme.texi` : source Texinfo ;
 - `catechisme.info` : manuel GNU Info ;
 - `catechisme.pdf` : version PDF ;
-- `catechisme.epub` : livre EPUB 3.
+- `catechisme.epub` : livre EPUB 3 ;
+- `generation-report.json` : rapport de génération exploitable par un outil.
 
 Pour ne produire qu'un format :
 
@@ -46,6 +56,17 @@ Pour un autre corpus, adaptez la borne avec
 `--expected-last-paragraph`, ou utilisez la valeur `0` pour désactiver ce
 contrôle.
 
+Un rapport lisible est toujours affiché à la fin. Pour demander explicitement
+un rapport JSON avec la commande installée :
+
+```sh
+cec2info --compile --pdf --epub --report-json generation-report.json
+```
+
+Le JSON contient la source, le nombre d'entrées, les pages liées et orphelines,
+la couverture des paragraphes, ainsi que le chemin et la taille de chaque
+sortie.
+
 Pour forcer un nouveau téléchargement :
 
 ```sh
@@ -54,6 +75,12 @@ make refresh
 
 `make clean` retire les sorties et auxiliaires de compilation ;
 `make distclean` retire aussi le cache HTML et les caches Python.
+
+## Intégration continue
+
+Le workflow GitHub Actions `.github/workflows/ci.yml` teste Python 3.10 et
+3.13. Il installe le paquet, vérifie la commande `cec2info`, exécute les tests
+Info/PDF/EPUB et construit une wheel sans télécharger le corpus du Vatican.
 
 ## Lecture dans Emacs
 
