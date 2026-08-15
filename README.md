@@ -71,6 +71,19 @@ Le JSON contient la source, le nombre d'entrées, les pages liées et orphelines
 la couverture des paragraphes, ainsi que le chemin et la taille de chaque
 sortie.
 
+## Architecture
+
+Le point d'entrée `cec2info.py` conserve l'interface publique et orchestre la
+commande. Les responsabilités internes sont séparées sans modifier son usage :
+
+- `cec2info_network.py` : téléchargement, reprises et cache atomique ;
+- `cec2info_parser.py` : analyse du sommaire et des pages HTML IntraText ;
+- `cec2info_output.py` : Texinfo, validation, rapports et compilation ;
+- `cec2info_model.py` : arbre du document et normalisation partagée.
+
+Les fonctions historiquement importables depuis `cec2info` y restent
+réexportées pour préserver la compatibilité.
+
 Pour forcer un nouveau téléchargement :
 
 ```sh
