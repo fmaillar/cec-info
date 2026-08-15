@@ -3,7 +3,7 @@
 ## Engagement
 
 Les personnes participant au projet s'engagent à maintenir un espace
-accueillant, respectueux et exempt de harcèlement, quels que soient leur
+accueillant, respectueux et exempt de harcèlement, quelle que soit leur
 expérience, leur identité, leur origine, leur religion, leur handicap ou leur
 point de vue.
 

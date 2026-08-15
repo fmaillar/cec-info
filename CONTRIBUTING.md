@@ -37,6 +37,7 @@ pour valider réellement les sorties Info, PDF et EPUB.
 5. Ouvrez une pull request en décrivant le problème, la solution et les
    vérifications effectuées.
 
-Ne commitez ni cache Vatican, ni document généré, ni environnement virtuel.
+Ne commitez ni le cache du Vatican, ni les documents générés, ni les
+environnements virtuels.
 En contribuant, vous acceptez que votre contribution soit distribuée sous la
 licence GPL-3.0-or-later du projet.
