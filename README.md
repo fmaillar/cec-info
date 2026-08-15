@@ -6,9 +6,9 @@
 [![Release](https://img.shields.io/github/v/release/fmaillar/cec-info)](https://github.com/fmaillar/cec-info/releases/latest)
 [![GPL-3.0-or-later license](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Converts the French or English edition of the **Catechism of the Catholic
-Church** published by the Vatican (IntraText) to **GNU Texinfo / Info**, PDF,
-and EPUB 3. The Info output can be read directly in Emacs.
+Converts supported official editions of the **Catechism of the Catholic
+Church** published by the Vatican to **GNU Texinfo / Info**, PDF, and EPUB 3.
+The Info output can be read directly in Emacs.
 
 ## Dependencies (Debian)
 
