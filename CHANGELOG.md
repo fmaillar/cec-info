@@ -5,6 +5,23 @@ Les changements notables du projet sont documentés dans ce fichier.
 Le format suit les principes de *Keep a Changelog* et les versions suivent le
 versionnage sémantique.
 
+## [3.3.1] - 2026-08-15
+
+### Ajouté
+
+- publication automatique des GitHub Releases à partir des tags `vX.Y.Z` ;
+- construction automatique du wheel et du paquet source ;
+- préparation de la publication PyPI sans secret avec Trusted Publishing ;
+- mises à jour hebdomadaires Dependabot pour Python et GitHub Actions ;
+- badges CI, release et licence dans le README.
+
+### Modifié
+
+- suppression des doubles exécutions CI sur les branches de pull request ;
+- annulation automatique d'une ancienne CI lorsqu'un nouveau commit arrive ;
+- métadonnées de licence migrées vers l'expression SPDX
+  `GPL-3.0-or-later`.
+
 ## [3.3.0] - 2026-08-15
 
 ### Ajouté
@@ -29,4 +46,5 @@ versionnage sémantique.
 - génération rendue déterministe et validée avant la création des sorties ;
 - documentation de l'installation, de la CI et des rapports de génération.
 
+[3.3.1]: https://github.com/fmaillar/cec-info/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/fmaillar/cec-info/releases/tag/v3.3.0
