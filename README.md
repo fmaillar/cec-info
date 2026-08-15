@@ -1,5 +1,9 @@
 # CEC → GNU Info
 
+[![CI](https://github.com/fmaillar/cec-info/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/fmaillar/cec-info/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/fmaillar/cec-info)](https://github.com/fmaillar/cec-info/releases/latest)
+[![Licence GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
+
 Convertit le **Catéchisme de l'Église catholique** publié par le Vatican
 (IntraText, version française) en manuel **GNU Texinfo / Info**, PDF et EPUB 3.
 La sortie Info est directement lisible dans Emacs.
