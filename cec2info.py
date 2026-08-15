@@ -21,27 +21,36 @@ import argparse
 import hashlib
 import html
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
-import unicodedata
 from dataclasses import dataclass, field
+from importlib import metadata
 from pathlib import Path
 from typing import Iterable
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 DEFAULT_INDEX = "https://www.vatican.va/archive/FRA0013/_INDEX.HTM"
-USER_AGENT = "cec2info/3.3 (+GNU Info + TeX structured conversion)"
+try:
+    VERSION = metadata.version("cec2info")
+except metadata.PackageNotFoundError:
+    VERSION = "development"
+
+USER_AGENT = f"cec2info/{VERSION} (+GNU Info + TeX structured conversion)"
 PARA_RE = re.compile(r'^\s*(\d{1,4})(?:\s+|(?=["«]))(.+)$')
 SPACE_RE = re.compile(r"[ \t\xa0]+")
 MULTIBLANK_RE = re.compile(r"\n[ \t]*\n(?:[ \t]*\n)+")
 SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 
 
 @dataclass
@@ -196,10 +205,44 @@ def cache_filename(url: str) -> str:
     return f"{digest}-{safe_name}"
 
 
-def fetch(url: str, cache_dir: Path, refresh: bool, delay: float) -> bytes:
+def write_cache_atomically(target: Path, data: bytes) -> None:
+    """Remplace un fichier de cache sans exposer de contenu partiel."""
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            delete=False,
+        ) as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+            temporary = Path(stream.name)
+        temporary.replace(target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def fetch(
+    url: str,
+    cache_dir: Path,
+    refresh: bool,
+    delay: float,
+    *,
+    timeout: float = 30.0,
+    retries: int = 2,
+    retry_backoff: float = 0.5,
+) -> bytes:
+    if timeout <= 0:
+        raise ValueError("timeout doit être strictement positif")
+    if retries < 0 or retry_backoff < 0:
+        raise ValueError("retries et retry_backoff doivent être positifs ou nuls")
+
     cache_dir.mkdir(parents=True, exist_ok=True)
     target = cache_dir / cache_filename(url)
-    if target.exists() and not refresh:
+    if target.exists() and target.stat().st_size > 0 and not refresh:
         return target.read_bytes()
 
     req = urllib.request.Request(
@@ -209,16 +252,33 @@ def fetch(url: str, cache_dir: Path, refresh: bool, delay: float) -> bytes:
             "Accept": "text/html,application/xhtml+xml",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            data = response.read()
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Échec du téléchargement de {url}: {exc}") from exc
+    last_error: BaseException | None = None
+    attempts = retries + 1
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                data = response.read()
+            if not data.strip():
+                raise ValueError("réponse vide")
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code not in RETRYABLE_HTTP_STATUS:
+                break
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            last_error = exc
+        else:
+            write_cache_atomically(target, data)
+            if delay > 0:
+                time.sleep(delay)
+            return data
 
-    target.write_bytes(data)
-    if delay > 0:
-        time.sleep(delay)
-    return data
+        if attempt + 1 < attempts and retry_backoff > 0:
+            time.sleep(retry_backoff * (2**attempt))
+
+    detail = str(last_error) if last_error is not None else "erreur inconnue"
+    raise RuntimeError(
+        f"Échec du téléchargement de {url} après {attempt + 1} tentative(s): {detail}"
+    ) from last_error
 
 
 def text_regions_from_html(data: bytes) -> list[str]:
@@ -611,6 +671,98 @@ def append_page_body(entry: Entry, data: bytes) -> None:
     if body:
         entry.body = "\n\n".join(part for part in (entry.body, body) if part)
 
+
+def downloadable_entries(
+    entries: Iterable[Entry],
+    index_url: str,
+) -> list[tuple[Entry, str]]:
+    """Retourne une seule entrée propriétaire pour chaque page liée."""
+    result: list[tuple[Entry, str]] = []
+    seen_urls: set[str] = set()
+    for entry in entries:
+        url = clean_page_url(index_url, entry.href) if entry.href else None
+        if url is not None and url not in seen_urls:
+            result.append((entry, url))
+            seen_urls.add(url)
+    return result
+
+
+def download_linked_pages(
+    downloadable: list[tuple[Entry, str]],
+    cache_dir: Path,
+    refresh: bool,
+    delay: float,
+) -> dict[str, bytes]:
+    page_data: dict[str, bytes] = {}
+    total = len(downloadable)
+    for i, (entry, url) in enumerate(downloadable, 1):
+        eprint(f"[{i:3d}/{total}] {entry.title}")
+        data = fetch(url, cache_dir, refresh=refresh, delay=delay)
+        page_data[url] = data
+        append_page_body(entry, data)
+    return page_data
+
+
+def discover_orphan_chain(
+    start_url: str,
+    start_data: bytes,
+    known_urls: set[str],
+    assigned_orphans: set[str],
+    cache_dir: Path,
+    refresh: bool,
+    delay: float,
+) -> tuple[list[tuple[str, bytes]], str | None]:
+    """Suit les liens « Suivant » jusqu'à une page connue ou une boucle."""
+    current_url = start_url
+    current_data = start_data
+    chain: list[tuple[str, bytes]] = []
+    seen_chain = {start_url}
+
+    while True:
+        following = next_page_url(current_data, current_url)
+        if (
+            following is None
+            or following in seen_chain
+            or following in known_urls
+            or following in assigned_orphans
+        ):
+            return chain, following
+
+        eprint(f"[page orpheline] {following}")
+        orphan_data = fetch(following, cache_dir, refresh=refresh, delay=delay)
+        chain.append((following, orphan_data))
+        seen_chain.add(following)
+        current_url, current_data = following, orphan_data
+
+
+def assign_orphan_chain(
+    entries: list[Entry],
+    entry_positions: dict[int, int],
+    url_entries: dict[str, Entry],
+    source_entry: Entry,
+    orphan_chain: list[tuple[str, bytes]],
+    following_url: str | None,
+) -> None:
+    next_known_entry = url_entries.get(following_url) if following_url else None
+    source_pos = entry_positions[id(source_entry)]
+    next_pos = (
+        entry_positions[id(next_known_entry)]
+        if next_known_entry is not None
+        else len(entries)
+    )
+    empty_entries = [
+        entry
+        for entry in entries[source_pos + 1 : next_pos]
+        if entry.href is None and not entry.body
+    ]
+
+    for _, orphan_data in orphan_chain:
+        # Une entrée sans lien située exactement dans le trou reçoit la page.
+        # Sinon la page complète logiquement l'entrée précédente.
+        target = empty_entries.pop(0) if empty_entries else source_entry
+        append_page_body(target, orphan_data)
+
+
 def load_bodies(
     roots: list[Entry],
     index_url: str,
@@ -619,19 +771,11 @@ def load_bodies(
     delay: float,
 ) -> int:
     entries = list(flatten_entries(roots))
-    downloadable = [(e, clean_page_url(index_url, e.href)) for e in entries if e.href]
-    downloadable = [(e, u) for e, u in downloadable if u]
+    downloadable = downloadable_entries(entries, index_url)
     entry_positions = {id(entry): i for i, entry in enumerate(entries)}
     url_entries = {url: entry for entry, url in downloadable}
-    page_data: dict[str, bytes] = {}
-
-    total = len(downloadable)
-    for i, (entry, url) in enumerate(downloadable, 1):
-        assert url is not None
-        eprint(f"[{i:3d}/{total}] {entry.title}")
-        data = fetch(url, cache_dir, refresh=refresh, delay=delay)
-        page_data[url] = data
-        append_page_body(entry, data)
+    known_urls = set(url_entries)
+    page_data = download_linked_pages(downloadable, cache_dir, refresh, delay)
 
     # Certaines pages de lecture existent dans la chaîne Précédent/Suivant
     # mais sont absentes du sommaire (_P15 et _P74 dans le corpus français).
@@ -639,56 +783,27 @@ def load_bodies(
     # interne d'IntraText.
     orphan_urls: set[str] = set()
     for source_entry, source_url in downloadable:
-        assert source_url is not None
-        current_url = source_url
-        current_data = page_data[source_url]
-        orphan_chain: list[tuple[str, bytes]] = []
-        seen_chain = {source_url}
-
-        while True:
-            following = next_page_url(current_data, current_url)
-            if following is None or following in seen_chain:
-                break
-            if following in url_entries:
-                break
-            if following in orphan_urls:
-                break
-
-            eprint(f"[page orpheline] {following}")
-            orphan_data = fetch(
-                following,
-                cache_dir,
-                refresh=refresh,
-                delay=delay,
-            )
-            orphan_urls.add(following)
-            orphan_chain.append((following, orphan_data))
-            seen_chain.add(following)
-            current_url, current_data = following, orphan_data
-
+        orphan_chain, following = discover_orphan_chain(
+            source_url,
+            page_data[source_url],
+            known_urls,
+            orphan_urls,
+            cache_dir,
+            refresh,
+            delay,
+        )
         if not orphan_chain:
             continue
 
-        following = next_page_url(current_data, current_url)
-        next_known_entry = url_entries.get(following) if following else None
-        source_pos = entry_positions[id(source_entry)]
-        next_pos = (
-            entry_positions[id(next_known_entry)]
-            if next_known_entry is not None
-            else len(entries)
+        orphan_urls.update(url for url, _ in orphan_chain)
+        assign_orphan_chain(
+            entries,
+            entry_positions,
+            url_entries,
+            source_entry,
+            orphan_chain,
+            following,
         )
-        empty_entries = [
-            entry
-            for entry in entries[source_pos + 1 : next_pos]
-            if entry.href is None and not entry.body
-        ]
-
-        for _, orphan_data in orphan_chain:
-            # Une entrée sans lien située exactement dans le trou reçoit la
-            # page (cas de la deuxième section, § 185). Sinon la page complète
-            # logiquement l'entrée précédente (cas de l'EN BREF, § 2075).
-            target = empty_entries.pop(0) if empty_entries else source_entry
-            append_page_body(target, orphan_data)
 
     return len(orphan_urls)
 
@@ -851,10 +966,25 @@ def compile_epub(texi_path: Path, epub_path: Path) -> None:
     )
 
 
-def main() -> int:
+def nonnegative_float(value: str) -> float:
+    result = float(value)
+    if result < 0:
+        raise argparse.ArgumentTypeError("la valeur doit être positive ou nulle")
+    return result
+
+
+def nonnegative_int(value: str) -> int:
+    result = int(value)
+    if result < 0:
+        raise argparse.ArgumentTypeError("la valeur doit être positive ou nulle")
+    return result
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Convertit le Catéchisme officiel du Vatican en GNU Texinfo/Info."
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     parser.add_argument("--index-url", default=DEFAULT_INDEX)
     parser.add_argument("--cache-dir", type=Path, default=Path(".cec-cache"))
     parser.add_argument("-o", "--output", type=Path, default=Path("catechisme.texi"))
@@ -886,13 +1016,13 @@ def main() -> int:
     parser.add_argument("--refresh", action="store_true", help="retélécharge les pages même si elles sont en cache")
     parser.add_argument(
         "--delay",
-        type=float,
+        type=nonnegative_float,
         default=0.05,
         help="pause entre téléchargements (secondes, défaut: 0.05)",
     )
     parser.add_argument(
         "--expected-last-paragraph",
-        type=int,
+        type=nonnegative_int,
         default=2865,
         help="dernier paragraphe attendu pour la validation (0 pour désactiver)",
     )
@@ -901,18 +1031,17 @@ def main() -> int:
         type=Path,
         help="écrit aussi le rapport de génération au format JSON",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def run(args: argparse.Namespace) -> int:
 
     eprint(f"Téléchargement du sommaire : {args.index_url}")
     index_data = fetch(args.index_url, args.cache_dir, refresh=args.refresh, delay=args.delay)
     roots = parse_index(index_data)
     entries = assign_nodes(roots)
     eprint(f"{len(entries)} entrées de sommaire détectées.")
-    linked_pages = sum(
-        clean_page_url(args.index_url, entry.href) is not None
-        for entry in entries
-        if entry.href
-    )
+    linked_pages = len(downloadable_entries(entries, args.index_url))
     orphan_pages = load_bodies(
         roots,
         args.index_url,
@@ -953,6 +1082,16 @@ def main() -> int:
     )
     emit_generation_report(report, args.report_json)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return run(args)
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+        eprint(f"Erreur: {exc}")
+        return 1
 
 
 if __name__ == "__main__":
