@@ -7,6 +7,16 @@ versionnage sémantique.
 
 ## [Non publié]
 
+## [3.5.0] - 2026-08-15
+
+### Ajouté
+
+- contrôle statique progressif des types avec mypy sur tous les modules.
+- mini-corpus IntraText local et test d'intégration déterministe de la chaîne
+  complète jusqu'au rapport JSON.
+- politique de sécurité et canal GitHub de signalement privé des vulnérabilités.
+- épinglage par SHA des actions GitHub, avec suivi hebdomadaire par Dependabot.
+
 ## [3.4.0] - 2026-08-15
 
 ### Ajouté
@@ -75,6 +85,7 @@ versionnage sémantique.
 - génération rendue déterministe et validée avant la création des sorties ;
 - documentation de l'installation, de la CI et des rapports de génération.
 
+[3.5.0]: https://github.com/fmaillar/cec-info/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/fmaillar/cec-info/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/fmaillar/cec-info/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/fmaillar/cec-info/releases/tag/v3.3.0

@@ -97,12 +97,22 @@ make refresh
 
 Le workflow GitHub Actions `.github/workflows/ci.yml` teste Python 3.10 et
 3.13 sous Ubuntu, ainsi que Python 3.13 sous macOS et Windows. Il vérifie le
-code avec Ruff, contrôle la commande `cec2info` et construit une wheel sans
+code avec Ruff et mypy, contrôle la commande `cec2info` et construit une wheel sans
 télécharger le corpus du Vatican. Ubuntu impose en plus au moins 95 % de
 couverture de branches et compile réellement les sorties Info/PDF/EPUB ; les
 autres plateformes exécutent les tests Python et ignorent ces tests lorsque
 les outils Texinfo/TeX ne sont pas installés. Localement, `make check`
 reproduit les contrôles de qualité Python.
+
+Un mini-corpus HTML local exerce aussi toute la chaîne déterministe : sommaire,
+page orpheline, paragraphes, Texinfo et rapport JSON. La CI ne dépend donc pas
+du réseau pour détecter une régression d'intégration.
+
+Le typage statique progressif peut aussi être exécuté séparément avec
+`make typecheck`.
+
+Les actions tierces sont épinglées par empreinte Git complète. Dependabot
+surveille ces références chaque semaine et propose leurs mises à jour.
 
 ## Publication
 
@@ -155,3 +165,6 @@ version ultérieure. Consultez le fichier `LICENSE`.
 Cette licence ne couvre pas le texte du Catéchisme. Le projet ne distribue que
 le convertisseur ; le texte est téléchargé depuis le site officiel du Vatican
 au moment de la génération et reste soumis aux droits indiqués par son éditeur.
+
+Les vulnérabilités doivent être signalées de manière privée conformément à la
+[politique de sécurité](SECURITY.md), et non dans une issue publique.

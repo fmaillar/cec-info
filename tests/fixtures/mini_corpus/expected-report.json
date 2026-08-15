@@ -1,0 +1,15 @@
+{
+  "source_url": "https://fixture.test/book/_INDEX.HTM",
+  "entries": 20,
+  "pages": {
+    "linked": 2,
+    "orphan": 1,
+    "total": 3
+  },
+  "paragraphs": {
+    "count": 3,
+    "unique": 3,
+    "first": 1,
+    "last": 3
+  }
+}
