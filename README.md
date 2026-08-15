@@ -83,7 +83,7 @@ make refresh
 ## Intégration continue
 
 Le workflow GitHub Actions `.github/workflows/ci.yml` teste Python 3.10 et
-3.13. Il vérifie le code avec Ruff, impose au moins 80 % de couverture de
+3.13. Il vérifie le code avec Ruff, impose au moins 95 % de couverture de
 branches, contrôle la commande `cec2info`, exécute les tests Info/PDF/EPUB et
 construit une wheel sans télécharger le corpus du Vatican. Localement,
 `make check` reproduit les contrôles de qualité Python.

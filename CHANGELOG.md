@@ -12,7 +12,7 @@ versionnage sémantique.
 - reprises réseau avec délai progressif et écritures atomiques du cache ;
 - tests du CLI, des erreurs réseau, des pages dupliquées et cycliques, de
   l'extraction HTML et des outils système absents ;
-- analyse Ruff et seuil minimal de 80 % de couverture de branches dans la CI.
+- analyse Ruff et seuil minimal de 95 % de couverture de branches dans la CI.
 
 ### Modifié
 
