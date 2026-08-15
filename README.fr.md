@@ -36,8 +36,8 @@ cec2info --help
 make
 ```
 
-Le français est la langue source par défaut. Pour sélectionner le corpus
-anglais officiel :
+Le français est la langue source par défaut. Pour sélectionner un autre corpus
+officiel :
 
 ```sh
 make LANGUAGE=en
@@ -45,15 +45,33 @@ make LANGUAGE=en
 cec2info --language en --compile --pdf --epub
 ```
 
-Les codes pris en charge sont `fr` et `en`. L'option `--language` sélectionne
+Les codes pris en charge sont `de`, `en`, `es`, `fr`, `it`, `la` et `pt`.
+Utilisez par exemple `--language de` pour l'allemand ou `--language la` pour
+le latin. L'option `--language` sélectionne
 l'URL officielle, les libellés de navigation, la structure, les métadonnées et
 les noms de fichiers. `--index-url` permet toujours de remplacer l'URL choisie.
+
+| Code | Langue | Source du Vatican | Format HTML | Nom de sortie |
+| --- | --- | --- | --- | --- |
+| `de` | allemand | [DEU0035](https://www.vatican.va/archive/DEU0035/_INDEX.HTM) | IntraText | `katechismus` |
+| `en` | anglais | [ENG0015](https://www.vatican.va/archive/ENG0015/_INDEX.HTM) | IntraText | `catechism` |
+| `es` | espagnol | [catechism_sp](https://www.vatican.va/archive/catechism_sp/index_sp.html) | ancien HTML | `catecismo-es` |
+| `fr` | français | [FRA0013](https://www.vatican.va/archive/FRA0013/_INDEX.HTM) | IntraText | `catechisme` |
+| `it` | italien | [catechism_it](https://www.vatican.va/archive/catechism_it/index_it.htm) | ancien HTML | `catechismo` |
+| `la` | latin | [catechism_lt](https://www.vatican.va/archive/catechism_lt/index_lt.htm) | ancien HTML | `catechismus-la` |
+| `pt` | portugais | [cathechism_po](https://www.vatican.va/archive/cathechism_po/index_new/prima-pagina-cic_po.html) | ancien HTML | `catecismo-pt` |
+
+GNU Texinfo ne fournit pas de table de localisation latine. Le contenu et les
+métadonnées restent en latin, tandis que les libellés de navigation produits
+par Texinfo utilisent sa table anglaise.
 
 Le script crée :
 
 - `.cec-cache/` : cache local des pages HTML ;
 - `catechisme.*` : sorties françaises Texinfo, Info, PDF et EPUB ;
 - `catechism.*` : sorties anglaises correspondantes ;
+- le nom propre à la langue indiqué ci-dessus, suivi de `.texi`, `.info`,
+  `.pdf` ou `.epub` ;
 - `generation-report.json` : rapport de génération exploitable par un outil.
 
 Pour ne produire qu'un format :
@@ -67,9 +85,10 @@ make epub
 Les tests locaux se lancent avec `make test`.
 
 La génération vérifie que les paragraphes 1 à 2865 sont tous présents une
-seule fois avant de compiler les formats finaux. Les pages IntraText absentes
-du sommaire sont récupérées automatiquement grâce aux liens localisés de page
-suivante.
+seule fois avant de compiler les formats finaux. Elle prend en charge IntraText
+ainsi que les anciens sommaires HTML plats du Vatican. Les pages IntraText
+absentes du sommaire sont récupérées automatiquement grâce aux liens localisés
+de page suivante.
 Pour un autre corpus, adaptez la borne avec
 `--expected-last-paragraph`, ou utilisez la valeur `0` pour désactiver ce
 contrôle.
@@ -91,8 +110,8 @@ Le point d'entrée `cec2info.py` conserve l'interface publique et orchestre la
 commande. Les responsabilités internes sont séparées sans modifier son usage :
 
 - `cec2info_network.py` : téléchargement, reprises et cache atomique ;
-- `cec2info_language.py` : profils de source et de sortie français et anglais ;
-- `cec2info_parser.py` : analyse du sommaire et des pages HTML IntraText ;
+- `cec2info_language.py` : profils localisés de source et de sortie ;
+- `cec2info_parser.py` : analyse des pages IntraText et des anciens HTML du Vatican ;
 - `cec2info_output.py` : Texinfo, validation, rapports et compilation ;
 - `cec2info_model.py` : arbre du document et normalisation partagée.
 

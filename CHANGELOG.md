@@ -9,10 +9,12 @@ Versioning.
 
 ### Added
 
-- French and English language profiles selecting the official Vatican source,
+- German, Italian, Latin, Portuguese, and Spanish language profiles, in
+  addition to French and English, selecting the official Vatican source,
   IntraText navigation labels, structural headings, generated metadata, and
   output file names.
-- `--language {fr,en}` CLI option and `LANGUAGE` Make variable.
+- `--language {de,en,es,fr,it,la,pt}` CLI option and `LANGUAGE` Make variable.
+- parsing of the Vatican's legacy flat HTML indexes alongside IntraText.
 - Deterministic English integration corpus covering localized parsing,
   orphan-page discovery, Texinfo generation, and JSON reporting.
 - English README used as the main GitHub and PyPI presentation while retaining
@@ -35,6 +37,8 @@ Versioning.
 - exclusion of IntraText footnote blocks and Bible references from CCC
   paragraph indexing.
 - recovery of a paragraph number merged into malformed English source HTML.
+- language-safe cache names and handling of malformed paragraph numbers in the
+  German and Portuguese source editions.
 
 ## [3.5.0] - 2026-08-15
 

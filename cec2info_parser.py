@@ -46,7 +46,83 @@ def first_direct_link(li: Tag) -> str | None:
     return None
 
 
-def parse_index(data: bytes) -> list[Entry]:
+def _legacy_entry_level(title: str, language: str) -> int | None:
+    profile = get_language_profile(language)
+    patterns = (
+        profile.part_pattern,
+        profile.section_pattern,
+        profile.chapter_pattern,
+        profile.article_pattern,
+        profile.paragraph_pattern,
+    )
+    for level, pattern in enumerate(patterns, 1):
+        if re.search(pattern, title, re.IGNORECASE):
+            return level
+    if normalize_text(title).casefold() in profile.unnumbered_titles:
+        return 1
+    return None
+
+
+def parse_legacy_index(
+    data: bytes,
+    language: str,
+    index_url: str,
+) -> list[Entry]:
+    """Build a hierarchy from the Vatican's flat, pre-IntraText indexes."""
+    soup = BeautifulSoup(data, "html.parser")
+    roots: list[Entry] = []
+    stack: list[Entry] = []
+    seen: set[tuple[str, str]] = set()
+    previous_page: str | None = None
+    current_structural_level = 0
+
+    for link in soup.find_all("a", href=True):
+        title = normalize_text(link.get_text(" ", strip=True))
+        href = str(link["href"])
+        page_url = clean_page_url(index_url, href, language)
+        if not title or page_url is None:
+            continue
+        key = (title.casefold(), href.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        semantic_level = _legacy_entry_level(title, language)
+        if semantic_level is not None:
+            level = semantic_level
+            current_structural_level = level
+        elif page_url != previous_page:
+            level = 1
+            current_structural_level = 1
+        else:
+            level = min(current_structural_level + 1, 5)
+
+        parent = stack[level - 2] if level > 1 and len(stack) >= level - 1 else None
+        entry = Entry(title=title, href=href, depth=level, parent=parent)
+        if parent is None:
+            roots.append(entry)
+        else:
+            parent.children.append(entry)
+        stack[level - 1 :] = [entry]
+        previous_page = page_url
+
+    if len(list(flatten_entries(roots))) < 20:
+        raise RuntimeError(
+            "The detected table of contents looks unusually small; "
+            "the Vatican HTML structure may have changed."
+        )
+    return roots
+
+
+def parse_index(
+    data: bytes,
+    language: str = DEFAULT_LANGUAGE,
+    index_url: str | None = None,
+) -> list[Entry]:
+    profile = get_language_profile(language)
+    if profile.source_format == "legacy":
+        return parse_legacy_index(data, language, index_url or profile.index_url)
+
     soup = BeautifulSoup(data, "html.parser")
     lists = soup.find_all(["ul", "ol"])
     if not lists:
@@ -224,23 +300,47 @@ def append_page_body(
     entry: Entry,
     data: bytes,
     language: str = DEFAULT_LANGUAGE,
+    *,
+    index_paragraphs: bool = True,
 ) -> None:
     text = extract_main_text(data, language)
+    text = correct_paragraph_numbers(text, language)
     text = strip_leading_duplicate_title(text, entry.title)
-    body = body_to_texinfo(text, entry_path_titles(entry), language)
+    body = body_to_texinfo(
+        text,
+        entry_path_titles(entry),
+        language,
+        index_paragraphs=index_paragraphs,
+    )
     if body:
         entry.body = "\n\n".join(part for part in (entry.body, body) if part)
+
+
+def correct_paragraph_numbers(text: str, language: str) -> str:
+    """Correct documented source typos only when adjacent numbers confirm them."""
+    for incorrect, corrected in get_language_profile(language).paragraph_number_corrections:
+        matches = list(re.finditer(r"(?m)^\s*(\d{1,4})[.]\s+", text))
+        for index, match in reversed(list(enumerate(matches))):
+            if int(match.group(1)) != incorrect or index == 0 or index + 1 >= len(matches):
+                continue
+            previous = int(matches[index - 1].group(1))
+            following = int(matches[index + 1].group(1))
+            if previous == corrected - 1 and following == corrected + 1:
+                start, end = match.span(1)
+                text = text[:start] + str(corrected) + text[end:]
+    return text
 
 
 def downloadable_entries(
     entries: Iterable[Entry],
     index_url: str,
+    language: str = DEFAULT_LANGUAGE,
 ) -> list[tuple[Entry, str]]:
     """Return a single owning entry for each linked page."""
     result: list[tuple[Entry, str]] = []
     seen_urls: set[str] = set()
     for entry in entries:
-        url = clean_page_url(index_url, entry.href) if entry.href else None
+        url = clean_page_url(index_url, entry.href, language) if entry.href else None
         if url is not None and url not in seen_urls:
             result.append((entry, url))
             seen_urls.add(url)
@@ -256,11 +356,23 @@ def download_linked_pages(
 ) -> dict[str, bytes]:
     page_data: dict[str, bytes] = {}
     total = len(downloadable)
+    profile = get_language_profile(language)
+    content_started = not any(
+        re.search(profile.content_start_pattern, entry.title, re.IGNORECASE)
+        for entry, _ in downloadable
+    )
     for index, (entry, url) in enumerate(downloadable, 1):
+        if re.search(profile.content_start_pattern, entry.title, re.IGNORECASE):
+            content_started = True
         eprint(f"[{index:3d}/{total}] {entry.title}")
         data = fetch(url, cache_dir, refresh=refresh, delay=delay)
         page_data[url] = data
-        append_page_body(entry, data, language)
+        append_page_body(
+            entry,
+            data,
+            language,
+            index_paragraphs=content_started,
+        )
     return page_data
 
 
@@ -333,7 +445,7 @@ def load_bodies(
     language: str = DEFAULT_LANGUAGE,
 ) -> int:
     entries = list(flatten_entries(roots))
-    downloadable = downloadable_entries(entries, index_url)
+    downloadable = downloadable_entries(entries, index_url, language)
     entry_positions = {id(entry): index for index, entry in enumerate(entries)}
     url_entries = {url: entry for entry, url in downloadable}
     known_urls = set(url_entries)
@@ -344,6 +456,9 @@ def load_bodies(
         delay,
         language,
     )
+
+    if get_language_profile(language).source_format != "intratext":
+        return 0
 
     orphan_urls: set[str] = set()
     for source_entry, source_url in downloadable:

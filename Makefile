@@ -37,6 +37,11 @@ check: lint typecheck coverage
 clean:
 	rm -f catechisme.texi catechisme.info catechisme.pdf catechisme.epub
 	rm -f catechism.texi catechism.info catechism.pdf catechism.epub
+	rm -f katechismus.texi katechismus.info katechismus.pdf katechismus.epub
+	rm -f catechismo.texi catechismo.info catechismo.pdf catechismo.epub
+	rm -f catecismo-es.texi catecismo-es.info catecismo-es.pdf catecismo-es.epub
+	rm -f catecismo-pt.texi catecismo-pt.info catecismo-pt.pdf catecismo-pt.epub
+	rm -f catechismus-la.texi catechismus-la.info catechismus-la.pdf catechismus-la.epub
 	rm -f $(REPORT)
 	rm -f catechisme.aux catechisme.cp catechisme.cps catechisme.dvi
 	rm -f catechisme.log catechisme.tex catechisme.toc cp.idx
