@@ -83,10 +83,13 @@ make refresh
 ## Intégration continue
 
 Le workflow GitHub Actions `.github/workflows/ci.yml` teste Python 3.10 et
-3.13. Il vérifie le code avec Ruff, impose au moins 95 % de couverture de
-branches, contrôle la commande `cec2info`, exécute les tests Info/PDF/EPUB et
-construit une wheel sans télécharger le corpus du Vatican. Localement,
-`make check` reproduit les contrôles de qualité Python.
+3.13 sous Ubuntu, ainsi que Python 3.13 sous macOS et Windows. Il vérifie le
+code avec Ruff, contrôle la commande `cec2info` et construit une wheel sans
+télécharger le corpus du Vatican. Ubuntu impose en plus au moins 95 % de
+couverture de branches et compile réellement les sorties Info/PDF/EPUB ; les
+autres plateformes exécutent les tests Python et ignorent ces tests lorsque
+les outils Texinfo/TeX ne sont pas installés. Localement, `make check`
+reproduit les contrôles de qualité Python.
 
 ## Publication
 
