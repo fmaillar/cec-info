@@ -39,13 +39,13 @@ jobs:
           sudo apt-get install --yes libarchive-zip-perl texinfo texlive-base texlive-binaries
 
       - name: Install project
-        run: python -m pip install --editable .
+        run: python -m pip install --editable ".[dev]"
 
       - name: Check command entry point
         run: cec2info --help
 
-      - name: Run tests
-        run: make test
+      - name: Run quality checks
+        run: make check
 
       - name: Build wheel
         run: python -m pip wheel . --no-deps --wheel-dir dist

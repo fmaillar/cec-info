@@ -28,10 +28,10 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
-import unicodedata
 from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path

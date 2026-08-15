@@ -13,6 +13,7 @@ requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4>=4.10",
 ]
+
 classifiers = [
     "Environment :: Console",
     "Programming Language :: Python :: 3",
@@ -21,8 +22,30 @@ classifiers = [
     "Topic :: Text Processing :: Markup",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "coverage[toml]>=7.0",
+    "ruff>=0.9",
+]
+
 [project.scripts]
 cec2info = "cec2info:main"
 
 [tool.setuptools]
 py-modules = ["cec2info"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.coverage.run]
+branch = true
+source = ["cec2info"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true

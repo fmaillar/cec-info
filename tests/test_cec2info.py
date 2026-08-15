@@ -6,17 +6,17 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-from urllib.error import HTTPError, URLError
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
 from cec2info import (
-    Entry,
     USER_AGENT,
     VERSION,
+    Entry,
     assign_nodes,
     body_to_texinfo,
-    build_parser,
     build_generation_report,
+    build_parser,
     cache_filename,
     clean_page_url,
     compile_epub,
