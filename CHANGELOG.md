@@ -10,6 +10,8 @@ versionnage sémantique.
 ### Ajouté
 
 - contrôle statique progressif des types avec mypy sur tous les modules.
+- mini-corpus IntraText local et test d'intégration déterministe de la chaîne
+  complète jusqu'au rapport JSON.
 
 ## [3.4.0] - 2026-08-15
 

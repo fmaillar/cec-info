@@ -40,6 +40,7 @@ from cec2info import (
     next_page_url,
     nonnegative_float,
     nonnegative_int,
+    paragraph_index_numbers,
     parse_index,
     render_texinfo,
     run,
@@ -47,6 +48,8 @@ from cec2info import (
     tex_section_command,
     validate_paragraph_indexes,
 )
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class ParseIndexTests(unittest.TestCase):
@@ -529,6 +532,65 @@ class GenerationReportTests(unittest.TestCase):
 
         self.assertEqual(report["outputs"], {})
         self.assertIn("plage None–None", stderr.getvalue())
+
+
+class MiniCorpusIntegrationTests(unittest.TestCase):
+    def test_complete_local_corpus_pipeline(self) -> None:
+        fixture_dir = FIXTURES / "mini_corpus"
+        index_url = "https://fixture.test/book/_INDEX.HTM"
+        pages = {
+            index_url: (fixture_dir / "index.html").read_bytes(),
+            "https://fixture.test/book/__P1.HTM": (
+                fixture_dir / "page1.html"
+            ).read_bytes(),
+            "https://fixture.test/book/__P2.HTM": (
+                fixture_dir / "page2.html"
+            ).read_bytes(),
+            "https://fixture.test/book/__P3.HTM": (
+                fixture_dir / "page3.html"
+            ).read_bytes(),
+        }
+
+        def fixture_fetch(url: str, *_args: object, **_kwargs: object) -> bytes:
+            return pages[url]
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            output = base / "mini-corpus.texi"
+            report_path = base / "report.json"
+            args = build_parser().parse_args(
+                [
+                    "--index-url",
+                    index_url,
+                    "--cache-dir",
+                    str(base / "cache"),
+                    "--output",
+                    str(output),
+                    "--expected-last-paragraph",
+                    "3",
+                    "--report-json",
+                    str(report_path),
+                ]
+            )
+            with (
+                patch("cec2info.fetch", side_effect=fixture_fetch),
+                patch("cec2info_parser.fetch", side_effect=fixture_fetch),
+            ):
+                status = run(args)
+
+            self.assertEqual(status, 0)
+            texi = output.read_text(encoding="utf-8")
+            self.assertEqual(paragraph_index_numbers(texi), [1, 2, 3])
+            self.assertIn("@strong{1} Premier paragraphe", texi)
+            self.assertIn("@strong{2} Paragraphe de la page orpheline", texi)
+            self.assertIn("@strong{3} Dernier paragraphe", texi)
+
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report.pop("outputs")
+            expected = json.loads(
+                (fixture_dir / "expected-report.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(report, expected)
 
 
 class CliTests(unittest.TestCase):

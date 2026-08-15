@@ -104,6 +104,10 @@ autres plateformes exécutent les tests Python et ignorent ces tests lorsque
 les outils Texinfo/TeX ne sont pas installés. Localement, `make check`
 reproduit les contrôles de qualité Python.
 
+Un mini-corpus HTML local exerce aussi toute la chaîne déterministe : sommaire,
+page orpheline, paragraphes, Texinfo et rapport JSON. La CI ne dépend donc pas
+du réseau pour détecter une régression d'intégration.
+
 Le typage statique progressif peut aussi être exécuté séparément avec
 `make typecheck`.
 
