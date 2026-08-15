@@ -36,8 +36,8 @@ cec2info --help
 make
 ```
 
-Le français est la langue source par défaut. Pour sélectionner le corpus
-anglais officiel :
+Le français est la langue source par défaut. Pour sélectionner un autre corpus
+officiel :
 
 ```sh
 make LANGUAGE=en
@@ -45,7 +45,9 @@ make LANGUAGE=en
 cec2info --language en --compile --pdf --epub
 ```
 
-Les codes pris en charge sont `fr` et `en`. L'option `--language` sélectionne
+Les codes pris en charge sont `de`, `en`, `es`, `fr`, `it`, `la` et `pt`.
+Utilisez par exemple `--language de` pour l'allemand ou `--language la` pour
+le latin. L'option `--language` sélectionne
 l'URL officielle, les libellés de navigation, la structure, les métadonnées et
 les noms de fichiers. `--index-url` permet toujours de remplacer l'URL choisie.
 
@@ -54,6 +56,9 @@ Le script crée :
 - `.cec-cache/` : cache local des pages HTML ;
 - `catechisme.*` : sorties françaises Texinfo, Info, PDF et EPUB ;
 - `catechism.*` : sorties anglaises correspondantes ;
+- `katechismus.*`, `catechismo.*`, `catecismo-es.*`, `catecismo-pt.*` ou
+  `catechismus-la.*` : sorties allemandes, italiennes, espagnoles, portugaises
+  ou latines ;
 - `generation-report.json` : rapport de génération exploitable par un outil.
 
 Pour ne produire qu'un format :
@@ -67,9 +72,10 @@ make epub
 Les tests locaux se lancent avec `make test`.
 
 La génération vérifie que les paragraphes 1 à 2865 sont tous présents une
-seule fois avant de compiler les formats finaux. Les pages IntraText absentes
-du sommaire sont récupérées automatiquement grâce aux liens localisés de page
-suivante.
+seule fois avant de compiler les formats finaux. Elle prend en charge IntraText
+ainsi que les anciens sommaires HTML plats du Vatican. Les pages IntraText
+absentes du sommaire sont récupérées automatiquement grâce aux liens localisés
+de page suivante.
 Pour un autre corpus, adaptez la borne avec
 `--expected-last-paragraph`, ou utilisez la valeur `0` pour désactiver ce
 contrôle.
@@ -91,8 +97,8 @@ Le point d'entrée `cec2info.py` conserve l'interface publique et orchestre la
 commande. Les responsabilités internes sont séparées sans modifier son usage :
 
 - `cec2info_network.py` : téléchargement, reprises et cache atomique ;
-- `cec2info_language.py` : profils de source et de sortie français et anglais ;
-- `cec2info_parser.py` : analyse du sommaire et des pages HTML IntraText ;
+- `cec2info_language.py` : profils localisés de source et de sortie ;
+- `cec2info_parser.py` : analyse des pages IntraText et des anciens HTML du Vatican ;
 - `cec2info_output.py` : Texinfo, validation, rapports et compilation ;
 - `cec2info_model.py` : arbre du document et normalisation partagée.
 

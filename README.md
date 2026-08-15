@@ -36,7 +36,7 @@ cec2info --help
 make
 ```
 
-French is the default source language. Select the official English corpus with:
+French is the default source language. Select another official corpus with:
 
 ```sh
 make LANGUAGE=en
@@ -44,7 +44,9 @@ make LANGUAGE=en
 cec2info --language en --compile --pdf --epub
 ```
 
-Supported language codes are `fr` and `en`. `--language` selects the official
+Supported language codes are `de`, `en`, `es`, `fr`, `it`, `la`, and `pt`.
+For example, use `--language de` for German or `--language la` for Latin.
+`--language` selects the official
 Vatican URL, navigation labels, structural headings, generated metadata, and
 default file names. `--index-url` can still override the selected source URL.
 
@@ -53,6 +55,8 @@ The script creates:
 - `.cec-cache/`: local cache for downloaded HTML pages;
 - `catechisme.*`: French Texinfo, Info, PDF, and EPUB outputs;
 - `catechism.*`: corresponding English outputs;
+- `katechismus.*`, `catechismo.*`, `catecismo-es.*`, `catecismo-pt.*`, or
+  `catechismus-la.*`: German, Italian, Spanish, Portuguese, or Latin outputs;
 - `generation-report.json`: machine-readable generation report.
 
 To generate a single format:
@@ -67,9 +71,10 @@ Run the local test suite with `make test` or all quality checks with
 `make check`.
 
 Before compiling the final formats, the generator verifies that paragraphs 1
-through 2865 are present exactly once. IntraText pages missing from the table
-of contents are recovered automatically by following localized next-page
-links. For a different corpus, adjust the limit with
+through 2865 are present exactly once. It supports both IntraText and the
+older flat Vatican HTML indexes. IntraText pages missing from the table of
+contents are recovered automatically by following localized next-page links.
+For a different corpus, adjust the limit with
 `--expected-last-paragraph`, or pass `0` to disable this check.
 
 A human-readable report is always printed at the end. To also write a JSON
@@ -89,8 +94,8 @@ file.
 internal responsibilities are split without changing how the tool is used:
 
 - `cec2info_network.py`: downloads, retries, and atomic cache writes;
-- `cec2info_language.py`: French and English source/output profiles;
-- `cec2info_parser.py`: IntraText table-of-contents and HTML parsing;
+- `cec2info_language.py`: localized source and output profiles;
+- `cec2info_parser.py`: IntraText and legacy Vatican HTML parsing;
 - `cec2info_output.py`: Texinfo generation, validation, reports, and compilation;
 - `cec2info_model.py`: document tree and shared normalization.
 
