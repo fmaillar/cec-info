@@ -1,51 +1,61 @@
-name: Signaler une anomalie
-description: Signaler un comportement reproductible de cec2info
+name: Report a bug
+description: Report reproducible cec2info behavior
 title: "[Bug] "
 labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Merci de vérifier qu'aucune issue existante ne décrit déjà le problème.
+      value: Please check that no existing issue already describes the problem.
   - type: input
     id: version
     attributes:
-      label: Version de cec2info
-      placeholder: "3.3.1"
+      label: cec2info version
+      placeholder: "3.5.0"
     validations:
       required: true
   - type: dropdown
     id: system
     attributes:
-      label: Système
+      label: Operating system
       options:
         - Linux
         - macOS
         - Windows
-        - Autre
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: language
+    attributes:
+      label: Source language
+      options:
+        - French (fr)
+        - English (en)
+        - Custom source URL
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Étapes pour reproduire
-      description: Indiquez les commandes exactes et les options utilisées.
+      label: Steps to reproduce
+      description: Provide the exact commands and options used.
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Résultat attendu
+      label: Expected result
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: Résultat observé
-      description: Ajoutez le message d'erreur complet en masquant les données sensibles.
+      label: Actual result
+      description: Include the complete error message after removing sensitive data.
     validations:
       required: true
   - type: textarea
     id: context
     attributes:
-      label: Contexte complémentaire
-      description: Version de Python, outils Texinfo/TeX et rapport de génération utiles.
+      label: Additional context
+      description: Include relevant Python, Texinfo/TeX, and generation-report details.

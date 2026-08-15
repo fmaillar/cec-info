@@ -1,18 +1,17 @@
 ---
-name: Autre demande
-about: Signaler un sujet qui ne correspond pas aux formulaires proposés
+name: Other request
+about: Report a topic that does not fit the available forms
 title: ""
 labels: ""
 assignees: ""
 ---
 
-## Contexte
+## Context
 
-Décrivez brièvement le besoin ou le problème concernant le convertisseur
-`cec2info` de ce dépôt.
+Briefly describe the need or problem involving the `cec2info` converter.
 
-## Détails
+## Details
 
-Indiquez les informations utiles : version, système, commandes exécutées et
-résultat attendu. Pour une question d'utilisation générale, préférez les
-[Discussions GitHub](https://github.com/fmaillar/cec-info/discussions).
+Include relevant details such as the version, operating system, source
+language, commands run, and expected result. For general usage questions,
+prefer [GitHub Discussions](https://github.com/fmaillar/cec-info/discussions).

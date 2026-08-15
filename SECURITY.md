@@ -1,36 +1,35 @@
-# Politique de sécurité
+# Security policy
 
-## Versions prises en charge
+## Supported versions
 
-La dernière version publiée de `cec2info` reçoit les correctifs de sécurité.
-Les versions antérieures doivent être mises à niveau avant toute analyse ou
-demande de correction.
+The latest `cec2info` release receives security fixes. Upgrade older versions
+before requesting analysis or a fix.
 
-| Version | Prise en charge |
+| Version | Supported |
 | --- | --- |
-| Dernière version | Oui |
-| Versions antérieures | Non |
+| Latest version | Yes |
+| Older versions | No |
 
-## Signaler une vulnérabilité
+## Reporting a vulnerability
 
-N'ouvrez pas d'issue publique pour une vulnérabilité non corrigée. Utilisez le
-[signalement privé GitHub](https://github.com/fmaillar/cec-info/security/advisories/new)
-et fournissez si possible :
+Do not open a public issue for an unpatched vulnerability. Use
+[GitHub private vulnerability reporting](https://github.com/fmaillar/cec-info/security/advisories/new)
+and provide, when possible:
 
-- la version concernée et l'environnement utilisé ;
-- un scénario de reproduction minimal ;
-- l'impact attendu et les conditions nécessaires à l'exploitation ;
-- une proposition de correction, si vous en avez une.
+- the affected version and environment;
+- a minimal reproduction scenario;
+- the expected impact and required conditions;
+- a proposed fix, if available.
 
-Le responsable du dépôt accusera réception dès que possible, vérifiera le
-signalement et communiquera la décision ainsi que le calendrier de correction.
-Une publication coordonnée sera préparée lorsque le problème est confirmé.
+The maintainer will acknowledge the report as soon as possible, investigate
+it, and communicate the decision and remediation schedule. A coordinated
+release will be prepared for confirmed vulnerabilities.
 
-Les défauts fonctionnels sans impact de sécurité doivent utiliser les
-[formulaires d'issues](https://github.com/fmaillar/cec-info/issues/new/choose).
+Functional defects without a security impact should use the
+[issue forms](https://github.com/fmaillar/cec-info/issues/new/choose).
 
-## Périmètre
+## Scope
 
-Cette politique couvre le convertisseur et ses workflows de publication. Le
-site du Vatican, le texte téléchargé, Python, Texinfo et les autres dépendances
-externes relèvent de leurs propres responsables de sécurité.
+This policy covers the converter and its publishing workflows. The Vatican
+website and text, Python, Texinfo, and other external dependencies remain the
+responsibility of their respective maintainers.

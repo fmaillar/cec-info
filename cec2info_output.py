@@ -8,18 +8,14 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from cec2info_language import DEFAULT_LANGUAGE, get_language_profile
 from cec2info_model import Entry, flatten_entries, heading_key, normalize_text
 
 PARA_RE = re.compile(r'^\s*(\d{1,4})(?:\s+|(?=["«]))(.+)$')
-PART_RE = re.compile(
-    r"^(PREMIERE|DEUXIEME|TROISIEME|QUATRIEME)\s+PARTIE\b", re.IGNORECASE
+BIBLE_REFERENCE_RE = re.compile(
+    r"^(?:[1-3]\s+)?[A-ZÀ-ÖØ-Þ][A-ZÀ-ÖØ-öø-ÿ.]{0,5}\s+\d",
+    re.IGNORECASE,
 )
-SECTION_RE = re.compile(
-    r"^(PREMIERE|DEUXIEME|TROISIEME|QUATRIEME)\s+SECTION\b", re.IGNORECASE
-)
-CHAPTER_RE = re.compile(r"^CHAPITRE\b", re.IGNORECASE)
-ARTICLE_RE = re.compile(r"^ARTICLE\s+\d+\b", re.IGNORECASE)
-PARAGRAPH_RE = re.compile(r"^PARAGRAPHE\s+\d+\b", re.IGNORECASE)
 ROMAN_RE = re.compile(r"^[IVXLCDM]+[.]\s+", re.IGNORECASE)
 
 
@@ -49,15 +45,20 @@ def is_repeated_path_heading(text: str, path_titles: list[str]) -> bool:
     return False
 
 
-def body_to_texinfo(text: str, path_titles: list[str] | None = None) -> str:
+def is_biblical_reference(text: str) -> bool:
+    """Return whether text starts with a numbered Bible book reference."""
+    return BIBLE_REFERENCE_RE.match(text) is not None
+
+
+def body_to_texinfo(
+    text: str,
+    path_titles: list[str] | None = None,
+    language: str = DEFAULT_LANGUAGE,
+) -> str:
     if not text:
         return ""
 
-    paragraphs = [
-        normalize_text(part)
-        for part in re.split(r"\n\s*\n", text)
-        if normalize_text(part)
-    ]
+    paragraphs = _split_text_paragraphs(text)
     output: list[str] = []
     before_first_number = True
     path_titles = path_titles or []
@@ -69,10 +70,11 @@ def body_to_texinfo(text: str, path_titles: list[str] | None = None) -> str:
             number, rest = match.groups()
             # A Bible reference split by the page layout can look like a false
             # paragraph, such as ``1 P 3, 21`` or ``2 S 7, 14``.
-            if not re.match(r"^[A-ZÀ-ÖØ-Þ]{1,3}\s+\d", rest):
+            if not is_biblical_reference(rest):
                 before_first_number = False
                 output.append(f"@cindex {number}")
-                output.append(f"@cindex CEC {number}")
+                prefix = get_language_profile(language).paragraph_prefix
+                output.append(f"@cindex {prefix} {number}")
                 output.append(f"@strong{{{number}}} {texi_escape(rest)}")
                 output.append("")
                 continue
@@ -84,6 +86,27 @@ def body_to_texinfo(text: str, path_titles: list[str] | None = None) -> str:
             output.extend([escaped, ""])
 
     return "\n".join(output).rstrip()
+
+
+def _split_text_paragraphs(text: str) -> list[str]:
+    """Split paragraphs and recover consecutive numbers merged by malformed HTML."""
+    paragraphs: list[str] = []
+    for raw_part in re.split(r"\n\s*\n", text):
+        part = normalize_text(" ".join(raw_part.splitlines()))
+        if not part:
+            continue
+
+        match = PARA_RE.match(part)
+        while match:
+            next_number = int(match.group(1)) + 1
+            boundary = re.search(rf"\s+(?={next_number}(?:\s+|(?=[\"«])))", part)
+            if boundary is None:
+                break
+            paragraphs.append(part[: boundary.start()].rstrip())
+            part = part[boundary.end() :].lstrip()
+            match = PARA_RE.match(part)
+        paragraphs.append(part)
+    return paragraphs
 
 
 def sibling_pointers(entry: Entry, roots: list[Entry]) -> tuple[str, str]:
@@ -108,27 +131,33 @@ def emit_menu(children: list[Entry]) -> str:
     return "\n".join(lines)
 
 
-def tex_semantic_level(title: str) -> int | None:
+def tex_semantic_level(title: str, language: str = DEFAULT_LANGUAGE) -> int | None:
     """Return the desired TeX level: 0=part, 1=chapter, ..., 4=subsubsection."""
+    profile = get_language_profile(language)
     title = title.strip()
-    if PART_RE.search(title):
+    if re.search(profile.part_pattern, title, re.IGNORECASE):
         return 0
-    if SECTION_RE.search(title):
+    if re.search(profile.section_pattern, title, re.IGNORECASE):
         return 1
-    if CHAPTER_RE.search(title):
+    if re.search(profile.chapter_pattern, title, re.IGNORECASE):
         return 2
-    if ARTICLE_RE.search(title):
+    if re.search(profile.article_pattern, title, re.IGNORECASE):
         return 3
-    if PARAGRAPH_RE.search(title) or ROMAN_RE.search(title):
+    if re.search(profile.paragraph_pattern, title, re.IGNORECASE) or ROMAN_RE.search(title):
         return 4
     return None
 
 
-def effective_tex_level(entry: Entry) -> int | None:
+def effective_tex_level(entry: Entry, language: str = DEFAULT_LANGUAGE) -> int | None:
     """Compute a usable Texinfo level without gaps in the actual tree."""
+    profile = get_language_profile(language)
     folded = heading_key(entry.title.strip())
-    desired = tex_semantic_level(entry.title.strip())
-    if folded in {"liste des sigles", "prologue", "en bref"} or desired is None:
+    desired = tex_semantic_level(entry.title.strip(), language)
+    if (
+        folded in profile.unnumbered_titles
+        or folded in profile.brief_titles
+        or desired is None
+    ):
         return None
     if desired == 0:
         return 0
@@ -136,7 +165,7 @@ def effective_tex_level(entry: Entry) -> int | None:
     parent = entry.parent
     parent_level: int | None = None
     while parent is not None:
-        level = effective_tex_level(parent)
+        level = effective_tex_level(parent, language)
         if level is not None:
             parent_level = level
             break
@@ -147,16 +176,17 @@ def effective_tex_level(entry: Entry) -> int | None:
     return min(desired, parent_level + 1)
 
 
-def tex_section_command(entry: Entry) -> str:
+def tex_section_command(entry: Entry, language: str = DEFAULT_LANGUAGE) -> str:
     """Return the sectioning command derived from the effective tree."""
+    profile = get_language_profile(language)
     escaped = texi_escape(entry.title.strip())
     folded = heading_key(entry.title.strip())
-    if folded in {"liste des sigles", "prologue"}:
+    if folded in profile.unnumbered_titles:
         return f"@unnumbered {escaped}"
-    if folded == "en bref":
+    if folded in profile.brief_titles:
         return f"@subsubheading {escaped}"
 
-    level = effective_tex_level(entry)
+    level = effective_tex_level(entry, language)
     if level is None:
         return f"@subsubheading {escaped}"
     if level == 0:
@@ -165,7 +195,7 @@ def tex_section_command(entry: Entry) -> str:
     return f"@{commands[level]} {escaped}"
 
 
-def conditional_entry_heading(entry: Entry) -> str:
+def conditional_entry_heading(entry: Entry, language: str = DEFAULT_LANGUAGE) -> str:
     """Use @heading for Info and sectioning commands for other formats."""
     return "\n".join(
         [
@@ -173,13 +203,18 @@ def conditional_entry_heading(entry: Entry) -> str:
             f"@heading {texi_escape(entry.title)}",
             "@end ifinfo",
             "@ifnotinfo",
-            tex_section_command(entry),
+            tex_section_command(entry, language),
             "@end ifnotinfo",
         ]
     )
 
 
-def render_texinfo(roots: list[Entry], source_url: str) -> str:
+def render_texinfo(
+    roots: list[Entry],
+    source_url: str,
+    language: str = DEFAULT_LANGUAGE,
+) -> str:
+    profile = get_language_profile(language)
     entries = list(flatten_entries(roots))
     chunks: list[str] = []
     top_menu = emit_menu(roots)
@@ -191,31 +226,28 @@ def render_texinfo(roots: list[Entry], source_url: str) -> str:
     chunks.append(
         "\\input texinfo\n"
         "@documentencoding UTF-8\n"
-        "@documentlanguage fr\n"
-        "@setfilename catechisme.info\n"
-        "@settitle Catéchisme de l'Église catholique\n\n"
+        f"@documentlanguage {profile.code}\n"
+        f"@setfilename {profile.info_basename}.info\n"
+        f"@settitle {profile.document_title}\n\n"
         "@dircategory Religion\n"
         "@direntry\n"
-        "* Catéchisme: (catechisme). Catéchisme de l'Église catholique.\n"
+        f"* {profile.dir_entry_name}: ({profile.info_basename}). "
+        f"{profile.document_title}.\n"
         "@end direntry\n\n"
         "@copying\n"
-        "Conversion personnelle au format GNU Info à partir du texte publié par\n"
-        "le Saint-Siège / Libreria Editrice Vaticana.\n"
-        f"Source : @uref{{{texi_escape(source_url)}}}.\n"
-        "Le texte source demeure soumis aux droits indiqués par son éditeur.\n"
+        f"{profile.conversion_notice}\n"
+        f"Source: @uref{{{texi_escape(source_url)}}}.\n"
+        f"{profile.source_rights_notice}\n"
         "@end copying\n\n"
         "@titlepage\n"
-        "@title Catéchisme de l'Église catholique\n"
-        "@subtitle Édition GNU Info générée depuis le corpus officiel du Vatican\n"
+        f"@title {profile.document_title}\n"
+        f"@subtitle {profile.subtitle}\n"
         "@page\n@vskip 0pt plus 1filll\n@insertcopying\n@end titlepage\n\n"
         "@iftex\n@headings off\n@contents\n@page\n@end iftex\n\n"
         "@node Top\n"
-        "@top Catéchisme de l'Église catholique\n\n"
-        "Cette édition est générée automatiquement depuis le sommaire et les pages\n"
-        "de lecture IntraText du Vatican.\n\n"
-        "Navigation : utilisez @kbd{n} / @kbd{p} / @kbd{u}, @kbd{m} pour un menu,\n"
-        "@kbd{i} pour l'index des numéros du CEC, et @kbd{s} pour une recherche\n"
-        "plein texte.\n\n"
+        f"@top {profile.document_title}\n\n"
+        f"{profile.introduction}\n\n"
+        f"{profile.navigation_help}\n\n"
         f"{top_menu}\n"
     )
 
@@ -226,7 +258,7 @@ def render_texinfo(roots: list[Entry], source_url: str) -> str:
                 [
                     "",
                     f"@node {entry.node}, {next_node}, {previous_node}, {entry.up_node}",
-                    conditional_entry_heading(entry),
+                    conditional_entry_heading(entry, language),
                     "",
                     emit_menu(entry.children),
                     "",
@@ -238,7 +270,7 @@ def render_texinfo(roots: list[Entry], source_url: str) -> str:
 
     chunks.append(
         "\n@node Index\n"
-        "@unnumbered Index des paragraphes du CEC\n"
+        f"@unnumbered {profile.paragraph_index_title}\n"
         "@printindex cp\n\n"
         "@bye\n"
     )
@@ -263,15 +295,15 @@ def validate_paragraph_indexes(texi: str, expected_last: int) -> None:
     if missing or duplicates or unexpected:
         details = []
         if missing:
-            details.append(f"absents: {missing}")
+            details.append(f"missing: {missing}")
         if duplicates:
-            details.append(f"doublons: {duplicates}")
+            details.append(f"duplicates: {duplicates}")
         if unexpected:
-            details.append(f"hors plage: {unexpected}")
+            details.append(f"out of range: {unexpected}")
         raise RuntimeError(
-            "Index des paragraphes incomplet ou invalide (" + "; ".join(details) + ")"
+            "Incomplete or invalid paragraph index (" + "; ".join(details) + ")"
         )
-    eprint(f"Paragraphes 1 à {expected_last} présents une fois chacun.")
+    eprint(f"Paragraphs 1 through {expected_last} are present exactly once.")
 
 
 def build_generation_report(
@@ -282,6 +314,7 @@ def build_generation_report(
     orphan_pages: int,
     texi: str,
     outputs: dict[str, Path],
+    language: str = DEFAULT_LANGUAGE,
 ) -> dict[str, object]:
     numbers = paragraph_index_numbers(texi)
     unique_numbers = set(numbers)
@@ -290,6 +323,7 @@ def build_generation_report(
         if path.exists():
             output_details[name] = {"path": str(path), "bytes": path.stat().st_size}
     return {
+        "language": language,
         "source_url": source_url,
         "entries": entry_count,
         "pages": {
@@ -309,9 +343,9 @@ def build_generation_report(
 
 def human_size(size: int) -> str:
     value = float(size)
-    for unit in ("o", "Kio", "Mio", "Gio"):
-        if value < 1024 or unit == "Gio":
-            return f"{value:.0f} {unit}" if unit == "o" else f"{value:.1f} {unit}"
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
         value /= 1024
     raise AssertionError("unreachable")
 
@@ -327,15 +361,16 @@ def emit_generation_report(
     assert isinstance(paragraphs, dict)
     assert isinstance(outputs, dict)
 
-    eprint("\nRapport de génération")
-    eprint(f"  Entrées du sommaire : {report['entries']}")
+    eprint("\nGeneration report")
+    eprint(f"  Language            : {report['language']}")
+    eprint(f"  Table of contents   : {report['entries']} entries")
     eprint(
-        "  Pages HTML          : "
-        f"{pages['total']} ({pages['linked']} liées, {pages['orphan']} orphelines)"
+        "  HTML pages          : "
+        f"{pages['total']} ({pages['linked']} linked, {pages['orphan']} orphan)"
     )
     eprint(
-        "  Paragraphes        : "
-        f"{paragraphs['unique']} uniques, plage {paragraphs['first']}–{paragraphs['last']}"
+        "  Paragraphs         : "
+        f"{paragraphs['unique']} unique, range {paragraphs['first']}–{paragraphs['last']}"
     )
     for name, details in outputs.items():
         assert isinstance(details, dict)
@@ -350,12 +385,12 @@ def emit_generation_report(
             json.dumps(report, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        eprint(f"  Rapport JSON        : {json_path}")
+        eprint(f"  JSON report         : {json_path}")
 
 
 def compile_info(texi_path: Path, info_path: Path) -> None:
     if shutil.which("makeinfo") is None:
-        raise RuntimeError("makeinfo est introuvable. Installez le paquet Debian 'texinfo'.")
+        raise RuntimeError("makeinfo was not found. Install the Debian 'texinfo' package.")
     info_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["makeinfo", "--no-split", "--output", str(info_path), str(texi_path)],
@@ -365,7 +400,7 @@ def compile_info(texi_path: Path, info_path: Path) -> None:
 
 def compile_pdf(texi_path: Path, pdf_path: Path) -> None:
     if shutil.which("texi2dvi") is None:
-        raise RuntimeError("texi2dvi est introuvable. Installez Texinfo/TeX.")
+        raise RuntimeError("texi2dvi was not found. Install Texinfo/TeX.")
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
@@ -384,7 +419,7 @@ def compile_pdf(texi_path: Path, pdf_path: Path) -> None:
 
 def compile_epub(texi_path: Path, epub_path: Path) -> None:
     if shutil.which("makeinfo") is None:
-        raise RuntimeError("makeinfo est introuvable. Installez le paquet Debian 'texinfo'.")
+        raise RuntimeError("makeinfo was not found. Install the Debian 'texinfo' package.")
     epub_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["makeinfo", "--epub3", "--output", str(epub_path), str(texi_path)],

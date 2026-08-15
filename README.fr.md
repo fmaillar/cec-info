@@ -6,9 +6,9 @@
 [![Release](https://img.shields.io/github/v/release/fmaillar/cec-info)](https://github.com/fmaillar/cec-info/releases/latest)
 [![Licence GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Convertit le **Catéchisme de l'Église catholique** publié par le Vatican
-(IntraText, version française) en manuel **GNU Texinfo / Info**, PDF et EPUB 3.
-La sortie Info est directement lisible dans Emacs.
+Convertit les éditions française et anglaise du **Catéchisme de l'Église
+catholique** publiées par le Vatican (IntraText) en manuel **GNU Texinfo /
+Info**, PDF et EPUB 3. La sortie Info est directement lisible dans Emacs.
 
 ## Dépendances (Debian)
 
@@ -36,13 +36,24 @@ cec2info --help
 make
 ```
 
+Le français est la langue source par défaut. Pour sélectionner le corpus
+anglais officiel :
+
+```sh
+make LANGUAGE=en
+# ou
+cec2info --language en --compile --pdf --epub
+```
+
+Les codes pris en charge sont `fr` et `en`. L'option `--language` sélectionne
+l'URL officielle, les libellés de navigation, la structure, les métadonnées et
+les noms de fichiers. `--index-url` permet toujours de remplacer l'URL choisie.
+
 Le script crée :
 
 - `.cec-cache/` : cache local des pages HTML ;
-- `catechisme.texi` : source Texinfo ;
-- `catechisme.info` : manuel GNU Info ;
-- `catechisme.pdf` : version PDF ;
-- `catechisme.epub` : livre EPUB 3 ;
+- `catechisme.*` : sorties françaises Texinfo, Info, PDF et EPUB ;
+- `catechism.*` : sorties anglaises correspondantes ;
 - `generation-report.json` : rapport de génération exploitable par un outil.
 
 Pour ne produire qu'un format :
@@ -57,7 +68,8 @@ Les tests locaux se lancent avec `make test`.
 
 La génération vérifie que les paragraphes 1 à 2865 sont tous présents une
 seule fois avant de compiler les formats finaux. Les pages IntraText absentes
-du sommaire sont récupérées automatiquement grâce aux liens `Suivant`.
+du sommaire sont récupérées automatiquement grâce aux liens localisés de page
+suivante.
 Pour un autre corpus, adaptez la borne avec
 `--expected-last-paragraph`, ou utilisez la valeur `0` pour désactiver ce
 contrôle.
@@ -69,9 +81,9 @@ un rapport JSON avec la commande installée :
 cec2info --compile --pdf --epub --report-json generation-report.json
 ```
 
-Le JSON contient la source, le nombre d'entrées, les pages liées et orphelines,
-la couverture des paragraphes, ainsi que le chemin et la taille de chaque
-sortie.
+Le JSON contient la langue, la source, le nombre d'entrées, les pages liées et
+orphelines, la couverture des paragraphes, ainsi que le chemin et la taille de
+chaque sortie.
 
 ## Architecture
 
@@ -79,6 +91,7 @@ Le point d'entrée `cec2info.py` conserve l'interface publique et orchestre la
 commande. Les responsabilités internes sont séparées sans modifier son usage :
 
 - `cec2info_network.py` : téléchargement, reprises et cache atomique ;
+- `cec2info_language.py` : profils de source et de sortie français et anglais ;
 - `cec2info_parser.py` : analyse du sommaire et des pages HTML IntraText ;
 - `cec2info_output.py` : Texinfo, validation, rapports et compilation ;
 - `cec2info_model.py` : arbre du document et normalisation partagée.
@@ -106,9 +119,10 @@ autres plateformes exécutent les tests Python et ignorent ces tests lorsque
 les outils Texinfo/TeX ne sont pas installés. Localement, `make check`
 reproduit les contrôles de qualité Python.
 
-Un mini-corpus HTML local exerce aussi toute la chaîne déterministe : sommaire,
-page orpheline, paragraphes, Texinfo et rapport JSON. La CI ne dépend donc pas
-du réseau pour détecter une régression d'intégration.
+Deux mini-corpus HTML locaux, français et anglais, exercent aussi toute la
+chaîne déterministe : sommaire, page orpheline, paragraphes, Texinfo localisé et
+rapport JSON. La CI ne dépend donc pas du réseau pour détecter une régression
+d'intégration.
 
 Le typage statique progressif peut aussi être exécuté séparément avec
 `make typecheck`.
