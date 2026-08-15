@@ -115,8 +115,11 @@ Ensuite : `M-x info`, puis `m Catéchisme`.
 Le script utilise automatiquement les pages `__P*.HTM` du système IntraText :
 ce sont les variantes de lecture sans les milliers de liens de concordance.
 
-## Droits
+## Licence et droits sur le texte
 
-Ce projet ne contient pas le texte du Catéchisme. Il ne contient que le
-convertisseur. Le texte est téléchargé depuis le site officiel du Vatican au
-moment de la génération et reste soumis aux droits indiqués par son éditeur.
+Le convertisseur est distribué sous la licence GNU GPL version 3 ou toute
+version ultérieure. Consultez le fichier `LICENSE`.
+
+Cette licence ne couvre pas le texte du Catéchisme. Le projet ne distribue que
+le convertisseur ; le texte est téléchargé depuis le site officiel du Vatican
+au moment de la génération et reste soumis aux droits indiqués par son éditeur.
