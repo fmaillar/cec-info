@@ -11,7 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 DEFAULT_INDEX = "https://www.vatican.va/archive/FRA0013/_INDEX.HTM"
 try:
@@ -27,11 +27,11 @@ RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 def clean_page_url(index_url: str, href: str) -> str | None:
     absolute = urllib.parse.urljoin(index_url, href)
     parsed = urllib.parse.urlsplit(absolute)
-    name = Path(parsed.path).name
+    name = PurePosixPath(parsed.path).name
 
     if re.fullmatch(r"_P[A-Za-z0-9]+\.HTM?", name, re.IGNORECASE):
         clean_name = "_" + name
-        path = str(Path(parsed.path).with_name(clean_name))
+        path = str(PurePosixPath(parsed.path).with_name(clean_name))
         return urllib.parse.urlunsplit(
             (parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment)
         )
@@ -42,7 +42,7 @@ def clean_page_url(index_url: str, href: str) -> str | None:
 
 def cache_filename(url: str) -> str:
     parsed = urllib.parse.urlsplit(url)
-    name = Path(parsed.path).name or "index.html"
+    name = PurePosixPath(parsed.path).name or "index.html"
     safe_name = SAFE_FILENAME_RE.sub("_", name)
 
     # Conserver les noms historiques pour la source officielle afin de ne pas
@@ -53,7 +53,7 @@ def cache_filename(url: str) -> str:
     if (
         parsed.scheme == default.scheme
         and parsed.netloc == default.netloc
-        and Path(parsed.path).parent == Path(default.path).parent
+        and PurePosixPath(parsed.path).parent == PurePosixPath(default.path).parent
         and not parsed.query
     ):
         return safe_name

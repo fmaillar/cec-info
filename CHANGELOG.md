@@ -27,6 +27,10 @@ versionnage sémantique.
 - séparation du réseau, de l'analyse HTML, de la génération et du modèle dans
   des modules spécialisés, avec maintien de l'interface publique historique.
 
+### Corrigé
+
+- construction des chemins d'URL avec des séparateurs POSIX sous Windows.
+
 ## [3.3.1] - 2026-08-15
 
 ### Ajouté
