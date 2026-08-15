@@ -93,6 +93,8 @@ def fetch(
     retries: int = 2,
     retry_backoff: float = 0.5,
 ) -> bytes:
+    if delay < 0:
+        raise ValueError("delay doit être positif ou nul")
     if timeout <= 0:
         raise ValueError("timeout doit être strictement positif")
     if retries < 0 or retry_backoff < 0:

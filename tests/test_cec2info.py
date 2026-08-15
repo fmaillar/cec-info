@@ -469,6 +469,8 @@ class FetchTests(unittest.TestCase):
     def test_invalid_retry_parameters_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             cache_dir = Path(directory)
+            with self.assertRaisesRegex(ValueError, "delay"):
+                fetch(self.url, cache_dir, False, -1)
             with self.assertRaisesRegex(ValueError, "timeout"):
                 fetch(self.url, cache_dir, False, 0, timeout=0)
             with self.assertRaisesRegex(ValueError, "retries"):

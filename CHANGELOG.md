@@ -30,6 +30,7 @@ versionnage sémantique.
 ### Corrigé
 
 - construction des chemins d'URL avec des séparateurs POSIX sous Windows.
+- rejet des délais négatifs lors d'un appel direct à l'API de téléchargement.
 - appels aux compilateurs avec des exécutables statiques après contrôle de leur
   présence, sans interprétation par un shell.
 
