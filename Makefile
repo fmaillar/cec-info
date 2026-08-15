@@ -1,12 +1,13 @@
 PYTHON ?= python3
+REPORT ?= generation-report.json
 
 .PHONY: all refresh info pdf epub test clean distclean
 
 all:
-	$(PYTHON) cec2info.py --compile --pdf --epub
+	$(PYTHON) cec2info.py --compile --pdf --epub --report-json $(REPORT)
 
 refresh:
-	$(PYTHON) cec2info.py --refresh --compile --pdf --epub
+	$(PYTHON) cec2info.py --refresh --compile --pdf --epub --report-json $(REPORT)
 
 info:
 	$(PYTHON) cec2info.py --compile
@@ -22,6 +23,7 @@ test:
 
 clean:
 	rm -f catechisme.texi catechisme.info catechisme.pdf catechisme.epub
+	rm -f $(REPORT)
 	rm -f catechisme.aux catechisme.cp catechisme.cps catechisme.dvi
 	rm -f catechisme.log catechisme.tex catechisme.toc cp.idx
 	rm -rf catechisme_epub_package

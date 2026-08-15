@@ -1,3 +1,6 @@
+import contextlib
+import io
+import json
 import shutil
 import tempfile
 import unittest
@@ -9,10 +12,12 @@ from cec2info import (
     Entry,
     assign_nodes,
     body_to_texinfo,
+    build_generation_report,
     cache_filename,
     compile_epub,
     compile_info,
     compile_pdf,
+    emit_generation_report,
     flatten_entries,
     load_bodies,
     next_page_url,
@@ -96,7 +101,7 @@ class NavigationAndValidationTests(unittest.TestCase):
         }
 
         with patch("cec2info.fetch", side_effect=lambda url, *_args, **_kwargs: pages[url]):
-            load_bodies(
+            orphan_count = load_bodies(
                 roots,
                 "https://example.test/book/_INDEX.HTM",
                 Path("unused-cache"),
@@ -104,9 +109,39 @@ class NavigationAndValidationTests(unittest.TestCase):
                 delay=0,
             )
 
+        self.assertEqual(orphan_count, 1)
         self.assertIn("@cindex 1", source.body)
         self.assertIn("@cindex 2", orphan_entry.body)
         self.assertIn("@cindex 3", following.body)
+
+
+class GenerationReportTests(unittest.TestCase):
+    def test_text_and_json_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            output = base / "book.info"
+            output.write_bytes(b"generated-info")
+            report = build_generation_report(
+                source_url="https://example.test/source",
+                entry_count=3,
+                linked_pages=2,
+                orphan_pages=1,
+                texi=(
+                    "@cindex 1\n@cindex CEC 1\n"
+                    "@cindex 2\n@cindex CEC 2\n"
+                ),
+                outputs={"info": output},
+            )
+            json_path = base / "report.json"
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                emit_generation_report(report, json_path)
+
+            self.assertIn("3 (2 liées, 1 orphelines)", stderr.getvalue())
+            self.assertIn("2 uniques, plage 1–2", stderr.getvalue())
+            saved = json.loads(json_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["paragraphs"]["unique"], 2)
+            self.assertEqual(saved["outputs"]["info"]["bytes"], 14)
 
 
 @unittest.skipUnless(

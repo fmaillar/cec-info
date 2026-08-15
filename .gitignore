@@ -1,6 +1,10 @@
 .cec-cache/
+.venv/
 __pycache__/
 *.py[cod]
+build/
+dist/
+*.egg-info/
 
 catechisme.aux
 catechisme.cp
@@ -15,3 +19,4 @@ catechisme.texi
 catechisme.toc
 catechisme_epub_package/
 cp.idx
+generation-report.json

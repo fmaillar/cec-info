@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import json
 import re
 import shutil
 import subprocess
@@ -616,7 +617,7 @@ def load_bodies(
     cache_dir: Path,
     refresh: bool,
     delay: float,
-) -> None:
+) -> int:
     entries = list(flatten_entries(roots))
     downloadable = [(e, clean_page_url(index_url, e.href)) for e in entries if e.href]
     downloadable = [(e, u) for e, u in downloadable if u]
@@ -689,15 +690,21 @@ def load_bodies(
             target = empty_entries.pop(0) if empty_entries else source_entry
             append_page_body(target, orphan_data)
 
+    return len(orphan_urls)
+
+
+def paragraph_index_numbers(texi: str) -> list[int]:
+    return [
+        int(number)
+        for number in re.findall(r"(?m)^@cindex (\d+)$", texi)
+    ]
+
 
 def validate_paragraph_indexes(texi: str, expected_last: int) -> None:
     if expected_last <= 0:
         return
 
-    numbers = [
-        int(number)
-        for number in re.findall(r"(?m)^@cindex (\d+)$", texi)
-    ]
+    numbers = paragraph_index_numbers(texi)
     counts: dict[int, int] = {}
     for number in numbers:
         counts[number] = counts.get(number, 0) + 1
@@ -716,6 +723,89 @@ def validate_paragraph_indexes(texi: str, expected_last: int) -> None:
         raise RuntimeError("Index des paragraphes incomplet ou invalide (" + "; ".join(details) + ")")
 
     eprint(f"Paragraphes 1 à {expected_last} présents une fois chacun.")
+
+
+def build_generation_report(
+    *,
+    source_url: str,
+    entry_count: int,
+    linked_pages: int,
+    orphan_pages: int,
+    texi: str,
+    outputs: dict[str, Path],
+) -> dict[str, object]:
+    numbers = paragraph_index_numbers(texi)
+    unique_numbers = set(numbers)
+    output_details: dict[str, object] = {}
+    for name, path in outputs.items():
+        if path.exists():
+            output_details[name] = {
+                "path": str(path),
+                "bytes": path.stat().st_size,
+            }
+
+    return {
+        "source_url": source_url,
+        "entries": entry_count,
+        "pages": {
+            "linked": linked_pages,
+            "orphan": orphan_pages,
+            "total": linked_pages + orphan_pages,
+        },
+        "paragraphs": {
+            "count": len(numbers),
+            "unique": len(unique_numbers),
+            "first": min(unique_numbers) if unique_numbers else None,
+            "last": max(unique_numbers) if unique_numbers else None,
+        },
+        "outputs": output_details,
+    }
+
+
+def human_size(size: int) -> str:
+    value = float(size)
+    for unit in ("o", "Kio", "Mio", "Gio"):
+        if value < 1024 or unit == "Gio":
+            return f"{value:.0f} {unit}" if unit == "o" else f"{value:.1f} {unit}"
+        value /= 1024
+    raise AssertionError("unreachable")
+
+
+def emit_generation_report(
+    report: dict[str, object],
+    json_path: Path | None = None,
+) -> None:
+    pages = report["pages"]
+    paragraphs = report["paragraphs"]
+    outputs = report["outputs"]
+    assert isinstance(pages, dict)
+    assert isinstance(paragraphs, dict)
+    assert isinstance(outputs, dict)
+
+    eprint("\nRapport de génération")
+    eprint(f"  Entrées du sommaire : {report['entries']}")
+    eprint(
+        "  Pages HTML          : "
+        f"{pages['total']} ({pages['linked']} liées, {pages['orphan']} orphelines)"
+    )
+    eprint(
+        "  Paragraphes        : "
+        f"{paragraphs['unique']} uniques, plage {paragraphs['first']}–{paragraphs['last']}"
+    )
+    for name, details in outputs.items():
+        assert isinstance(details, dict)
+        eprint(
+            f"  {str(name).upper():<18}: "
+            f"{human_size(int(details['bytes']))} — {details['path']}"
+        )
+
+    if json_path is not None:
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        eprint(f"  Rapport JSON        : {json_path}")
 
 
 def compile_info(texi_path: Path, info_path: Path) -> None:
@@ -806,6 +896,11 @@ def main() -> int:
         default=2865,
         help="dernier paragraphe attendu pour la validation (0 pour désactiver)",
     )
+    parser.add_argument(
+        "--report-json",
+        type=Path,
+        help="écrit aussi le rapport de génération au format JSON",
+    )
     args = parser.parse_args()
 
     eprint(f"Téléchargement du sommaire : {args.index_url}")
@@ -813,25 +908,50 @@ def main() -> int:
     roots = parse_index(index_data)
     entries = assign_nodes(roots)
     eprint(f"{len(entries)} entrées de sommaire détectées.")
-    load_bodies(roots, args.index_url, args.cache_dir, refresh=args.refresh, delay=args.delay)
+    linked_pages = sum(
+        clean_page_url(args.index_url, entry.href) is not None
+        for entry in entries
+        if entry.href
+    )
+    orphan_pages = load_bodies(
+        roots,
+        args.index_url,
+        args.cache_dir,
+        refresh=args.refresh,
+        delay=args.delay,
+    )
 
     texi = render_texinfo(roots, args.index_url)
     validate_paragraph_indexes(texi, args.expected_last_paragraph)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(texi, encoding="utf-8")
     eprint(f"Texinfo écrit : {args.output}")
+    outputs = {"texinfo": args.output}
 
     if args.compile:
         compile_info(args.output, args.info)
         eprint(f"Info écrit : {args.info}")
+        outputs["info"] = args.info
 
     if args.pdf:
         compile_pdf(args.output, args.pdf_output)
         eprint(f"PDF écrit : {args.pdf_output}")
+        outputs["pdf"] = args.pdf_output
 
     if args.epub:
         compile_epub(args.output, args.epub_output)
         eprint(f"EPUB écrit : {args.epub_output}")
+        outputs["epub"] = args.epub_output
+
+    report = build_generation_report(
+        source_url=args.index_url,
+        entry_count=len(entries),
+        linked_pages=linked_pages,
+        orphan_pages=orphan_pages,
+        texi=texi,
+        outputs=outputs,
+    )
+    emit_generation_report(report, args.report_json)
     return 0
 
 
