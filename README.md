@@ -162,3 +162,6 @@ version ultérieure. Consultez le fichier `LICENSE`.
 Cette licence ne couvre pas le texte du Catéchisme. Le projet ne distribue que
 le convertisseur ; le texte est téléchargé depuis le site officiel du Vatican
 au moment de la génération et reste soumis aux droits indiqués par son éditeur.
+
+Les vulnérabilités doivent être signalées de manière privée conformément à la
+[politique de sécurité](SECURITY.md), et non dans une issue publique.
