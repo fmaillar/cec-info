@@ -7,6 +7,8 @@ versionnage sémantique.
 
 ## [Non publié]
 
+## [3.5.0] - 2026-08-15
+
 ### Ajouté
 
 - contrôle statique progressif des types avec mypy sur tous les modules.
@@ -83,6 +85,7 @@ versionnage sémantique.
 - génération rendue déterministe et validée avant la création des sorties ;
 - documentation de l'installation, de la CI et des rapports de génération.
 
+[3.5.0]: https://github.com/fmaillar/cec-info/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/fmaillar/cec-info/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/fmaillar/cec-info/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/fmaillar/cec-info/releases/tag/v3.3.0
