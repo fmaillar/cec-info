@@ -18,6 +18,8 @@ versionnage sémantique.
 
 - description courte du paquet traduite en anglais pour améliorer sa
   découvrabilité internationale.
+- commentaires et docstrings du code source traduits en anglais, sans modifier
+  les messages de l'interface française.
 
 ## [3.5.0] - 2026-08-15
 

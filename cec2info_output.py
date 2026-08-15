@@ -1,4 +1,4 @@
-"""Transformation Texinfo, validation, rapports et compilation des sorties."""
+"""Texinfo transformation, validation, reporting, and output compilation."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def texi_escape(text: str) -> str:
 
 
 def is_repeated_path_heading(text: str, path_titles: list[str]) -> bool:
-    """Détecte un morceau de titre déjà représenté par la structure du sommaire."""
+    """Detect a title fragment already represented by the table-of-contents tree."""
     key = heading_key(text)
     if not key or len(key) < 3:
         return False
@@ -67,8 +67,8 @@ def body_to_texinfo(text: str, path_titles: list[str] | None = None) -> str:
         match = PARA_RE.match(part)
         if match:
             number, rest = match.groups()
-            # Une référence biblique coupée par la mise en page peut donner un
-            # faux paragraphe tel que ``1 P 3, 21`` ou ``2 S 7, 14``.
+            # A Bible reference split by the page layout can look like a false
+            # paragraph, such as ``1 P 3, 21`` or ``2 S 7, 14``.
             if not re.match(r"^[A-ZÀ-ÖØ-Þ]{1,3}\s+\d", rest):
                 before_first_number = False
                 output.append(f"@cindex {number}")
@@ -109,7 +109,7 @@ def emit_menu(children: list[Entry]) -> str:
 
 
 def tex_semantic_level(title: str) -> int | None:
-    """Niveau TeX souhaité: 0=part, 1=chapter, ..., 4=subsubsection."""
+    """Return the desired TeX level: 0=part, 1=chapter, ..., 4=subsubsection."""
     title = title.strip()
     if PART_RE.search(title):
         return 0
@@ -125,7 +125,7 @@ def tex_semantic_level(title: str) -> int | None:
 
 
 def effective_tex_level(entry: Entry) -> int | None:
-    """Calcule le niveau Texinfo utilisable sans saut dans l'arbre réel."""
+    """Compute a usable Texinfo level without gaps in the actual tree."""
     folded = heading_key(entry.title.strip())
     desired = tex_semantic_level(entry.title.strip())
     if folded in {"liste des sigles", "prologue", "en bref"} or desired is None:
@@ -148,7 +148,7 @@ def effective_tex_level(entry: Entry) -> int | None:
 
 
 def tex_section_command(entry: Entry) -> str:
-    """Retourne la commande de sectionnement fondée sur l'arbre effectif."""
+    """Return the sectioning command derived from the effective tree."""
     escaped = texi_escape(entry.title.strip())
     folded = heading_key(entry.title.strip())
     if folded in {"liste des sigles", "prologue"}:
@@ -166,7 +166,7 @@ def tex_section_command(entry: Entry) -> str:
 
 
 def conditional_entry_heading(entry: Entry) -> str:
-    """Info utilise @heading ; les autres formats utilisent la sectionisation."""
+    """Use @heading for Info and sectioning commands for other formats."""
     return "\n".join(
         [
             "@ifinfo",

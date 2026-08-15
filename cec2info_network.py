@@ -1,4 +1,4 @@
-"""Téléchargement HTTP et cache local de cec2info."""
+"""HTTP downloads and local caching for cec2info."""
 
 from __future__ import annotations
 
@@ -45,10 +45,10 @@ def cache_filename(url: str) -> str:
     name = PurePosixPath(parsed.path).name or "index.html"
     safe_name = SAFE_FILENAME_RE.sub("_", name)
 
-    # Conserver les noms historiques pour la source officielle afin de ne pas
-    # invalider le cache existant. Pour toute autre URL, inclure une empreinte
-    # de l'URL complète : deux corpus utilisant les mêmes noms IntraText ne
-    # peuvent ainsi plus partager silencieusement les mêmes fichiers.
+    # Preserve historical names for the official source to avoid invalidating
+    # the existing cache. For any other URL, include a digest of the complete
+    # URL so two corpora using the same IntraText names cannot silently share
+    # the same files.
     default = urllib.parse.urlsplit(DEFAULT_INDEX)
     if (
         parsed.scheme == default.scheme
@@ -64,7 +64,7 @@ def cache_filename(url: str) -> str:
 
 
 def write_cache_atomically(target: Path, data: bytes) -> None:
-    """Remplace un fichier de cache sans exposer de contenu partiel."""
+    """Replace a cache file without exposing partially written content."""
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(

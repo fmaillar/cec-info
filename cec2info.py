@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Interface publique et ligne de commande de cec2info.
+"""Public interface and command-line entry point for cec2info.
 
-Les responsabilités internes sont réparties entre ``cec2info_network`` pour
-le téléchargement, ``cec2info_parser`` pour l'analyse HTML et
-``cec2info_output`` pour la génération. Les imports historiques restent
-disponibles depuis ce module pour préserver la compatibilité.
+Internal responsibilities are split between ``cec2info_network`` for
+downloads, ``cec2info_parser`` for HTML parsing, and ``cec2info_output`` for
+generation. Historical imports remain available from this module to preserve
+backward compatibility.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ from cec2info_parser import (
     text_regions_from_html,
 )
 
-# Ces noms constituent l'API historique du module monolithique.
+# These names form the historical API of the monolithic module.
 __all__ = [
     "DEFAULT_INDEX",
     "USER_AGENT",

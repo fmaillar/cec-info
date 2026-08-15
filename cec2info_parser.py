@@ -1,4 +1,4 @@
-"""Analyse du sommaire et des pages HTML IntraText."""
+"""Parsing of the IntraText table of contents and HTML pages."""
 
 from __future__ import annotations
 
@@ -56,8 +56,8 @@ def parse_index(data: bytes) -> list[Entry]:
 
     def walk(list_tag: Tag, parent: Entry | None, depth: int) -> None:
         direct_items = list(list_tag.find_all("li", recursive=False))
-        # Certains wrappers invalides ``ul > ul > li`` n'ajoutent pas de
-        # niveau logique ; on les traverse avec le parent courant.
+        # Some invalid ``ul > ul > li`` wrappers do not introduce a logical
+        # level, so traverse them using the current parent.
         if not direct_items:
             for nested in list_tag.find_all(["ul", "ol"], recursive=False):
                 walk(nested, parent, depth)
@@ -189,7 +189,7 @@ def strip_leading_duplicate_title(text: str, title: str) -> str:
 
 
 def next_page_url(data: bytes, current_url: str) -> str | None:
-    """Retourne la page de lecture indiquée par le lien IntraText « Suivant »."""
+    """Return the reading page referenced by IntraText's ``Suivant`` link."""
     soup = BeautifulSoup(data, "html.parser")
     for link in soup.find_all("a", href=True):
         if normalize_text(link.get_text(" ", strip=True)).casefold() == "suivant":
@@ -209,7 +209,7 @@ def downloadable_entries(
     entries: Iterable[Entry],
     index_url: str,
 ) -> list[tuple[Entry, str]]:
-    """Retourne une seule entrée propriétaire pour chaque page liée."""
+    """Return a single owning entry for each linked page."""
     result: list[tuple[Entry, str]] = []
     seen_urls: set[str] = set()
     for entry in entries:
@@ -245,7 +245,7 @@ def discover_orphan_chain(
     refresh: bool,
     delay: float,
 ) -> tuple[list[tuple[str, bytes]], str | None]:
-    """Suit les liens « Suivant » jusqu'à une page connue ou une boucle."""
+    """Follow ``Suivant`` links until reaching a known page or a cycle."""
     current_url = start_url
     current_data = start_data
     chain: list[tuple[str, bytes]] = []

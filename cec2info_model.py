@@ -1,4 +1,4 @@
-"""Modèle de données et normalisation partagés par cec2info."""
+"""Data model and normalization helpers shared by cec2info."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def assign_nodes(roots: list[Entry]) -> list[Entry]:
 
 
 def heading_key(text: str) -> str:
-    """Normalise un titre pour comparer les en-têtes Vatican et le sommaire."""
+    """Normalize a title for comparing Vatican headings with the table of contents."""
     text = unicodedata.normalize("NFKD", html.unescape(text))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = text.casefold()
