@@ -116,6 +116,53 @@ class NavigationAndValidationTests(unittest.TestCase):
         self.assertIn("@cindex 2", orphan_entry.body)
         self.assertIn("@cindex 3", following.body)
 
+    def test_duplicate_page_url_is_downloaded_and_assigned_once(self) -> None:
+        first = Entry(title="Première entrée", href="__P1.HTM", depth=1)
+        duplicate = Entry(title="Entrée dupliquée", href="__P1.HTM", depth=1)
+        page = b"<body>1 Contenu unique.</body>"
+
+        with patch("cec2info.fetch", return_value=page) as mocked_fetch:
+            orphan_count = load_bodies(
+                [first, duplicate],
+                "https://example.test/book/_INDEX.HTM",
+                Path("unused-cache"),
+                refresh=False,
+                delay=0,
+            )
+
+        self.assertEqual(orphan_count, 0)
+        mocked_fetch.assert_called_once()
+        self.assertIn("@cindex 1", first.body)
+        self.assertEqual(duplicate.body, "")
+
+    def test_orphan_cycle_stops_without_duplicate_download(self) -> None:
+        source = Entry(title="Source", href="__P1.HTM", depth=1)
+        pages = {
+            "https://example.test/book/__P1.HTM": (
+                '<body>1 Début.<a href="__P2.HTM">Suivant</a></body>'.encode()
+            ),
+            "https://example.test/book/__P2.HTM": (
+                '<body>2 Suite.<a href="__P1.HTM">Suivant</a></body>'.encode()
+            ),
+        }
+
+        with patch(
+            "cec2info.fetch",
+            side_effect=lambda url, *_args, **_kwargs: pages[url],
+        ) as mocked_fetch:
+            orphan_count = load_bodies(
+                [source],
+                "https://example.test/book/_INDEX.HTM",
+                Path("unused-cache"),
+                refresh=False,
+                delay=0,
+            )
+
+        self.assertEqual(orphan_count, 1)
+        self.assertEqual(mocked_fetch.call_count, 2)
+        self.assertEqual(source.body.count("@cindex 1"), 1)
+        self.assertEqual(source.body.count("@cindex 2"), 1)
+
 
 class FetchTests(unittest.TestCase):
     url = "https://example.test/book/__P1.HTM"
