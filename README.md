@@ -50,13 +50,27 @@ For example, use `--language de` for German or `--language la` for Latin.
 Vatican URL, navigation labels, structural headings, generated metadata, and
 default file names. `--index-url` can still override the selected source URL.
 
+| Code | Language | Vatican source | HTML format | Output basename |
+| --- | --- | --- | --- | --- |
+| `de` | German | [DEU0035](https://www.vatican.va/archive/DEU0035/_INDEX.HTM) | IntraText | `katechismus` |
+| `en` | English | [ENG0015](https://www.vatican.va/archive/ENG0015/_INDEX.HTM) | IntraText | `catechism` |
+| `es` | Spanish | [catechism_sp](https://www.vatican.va/archive/catechism_sp/index_sp.html) | legacy HTML | `catecismo-es` |
+| `fr` | French | [FRA0013](https://www.vatican.va/archive/FRA0013/_INDEX.HTM) | IntraText | `catechisme` |
+| `it` | Italian | [catechism_it](https://www.vatican.va/archive/catechism_it/index_it.htm) | legacy HTML | `catechismo` |
+| `la` | Latin | [catechism_lt](https://www.vatican.va/archive/catechism_lt/index_lt.htm) | legacy HTML | `catechismus-la` |
+| `pt` | Portuguese | [cathechism_po](https://www.vatican.va/archive/cathechism_po/index_new/prima-pagina-cic_po.html) | legacy HTML | `catecismo-pt` |
+
+GNU Texinfo does not provide a Latin localization table. Latin documents keep
+their Latin content and metadata while using Texinfo's English localization
+table for generated navigation labels.
+
 The script creates:
 
 - `.cec-cache/`: local cache for downloaded HTML pages;
 - `catechisme.*`: French Texinfo, Info, PDF, and EPUB outputs;
 - `catechism.*`: corresponding English outputs;
-- `katechismus.*`, `catechismo.*`, `catecismo-es.*`, `catecismo-pt.*`, or
-  `catechismus-la.*`: German, Italian, Spanish, Portuguese, or Latin outputs;
+- the language-specific basename listed above followed by `.texi`, `.info`,
+  `.pdf`, or `.epub`;
 - `generation-report.json`: machine-readable generation report.
 
 To generate a single format:

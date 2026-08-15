@@ -51,14 +51,27 @@ le latin. L'option `--language` sélectionne
 l'URL officielle, les libellés de navigation, la structure, les métadonnées et
 les noms de fichiers. `--index-url` permet toujours de remplacer l'URL choisie.
 
+| Code | Langue | Source du Vatican | Format HTML | Nom de sortie |
+| --- | --- | --- | --- | --- |
+| `de` | allemand | [DEU0035](https://www.vatican.va/archive/DEU0035/_INDEX.HTM) | IntraText | `katechismus` |
+| `en` | anglais | [ENG0015](https://www.vatican.va/archive/ENG0015/_INDEX.HTM) | IntraText | `catechism` |
+| `es` | espagnol | [catechism_sp](https://www.vatican.va/archive/catechism_sp/index_sp.html) | ancien HTML | `catecismo-es` |
+| `fr` | français | [FRA0013](https://www.vatican.va/archive/FRA0013/_INDEX.HTM) | IntraText | `catechisme` |
+| `it` | italien | [catechism_it](https://www.vatican.va/archive/catechism_it/index_it.htm) | ancien HTML | `catechismo` |
+| `la` | latin | [catechism_lt](https://www.vatican.va/archive/catechism_lt/index_lt.htm) | ancien HTML | `catechismus-la` |
+| `pt` | portugais | [cathechism_po](https://www.vatican.va/archive/cathechism_po/index_new/prima-pagina-cic_po.html) | ancien HTML | `catecismo-pt` |
+
+GNU Texinfo ne fournit pas de table de localisation latine. Le contenu et les
+métadonnées restent en latin, tandis que les libellés de navigation produits
+par Texinfo utilisent sa table anglaise.
+
 Le script crée :
 
 - `.cec-cache/` : cache local des pages HTML ;
 - `catechisme.*` : sorties françaises Texinfo, Info, PDF et EPUB ;
 - `catechism.*` : sorties anglaises correspondantes ;
-- `katechismus.*`, `catechismo.*`, `catecismo-es.*`, `catecismo-pt.*` ou
-  `catechismus-la.*` : sorties allemandes, italiennes, espagnoles, portugaises
-  ou latines ;
+- le nom propre à la langue indiqué ci-dessus, suivi de `.texi`, `.info`,
+  `.pdf` ou `.epub` ;
 - `generation-report.json` : rapport de génération exploitable par un outil.
 
 Pour ne produire qu'un format :
