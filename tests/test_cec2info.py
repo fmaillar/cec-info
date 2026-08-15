@@ -18,10 +18,12 @@ from cec2info import (
     build_parser,
     build_generation_report,
     cache_filename,
+    clean_page_url,
     compile_epub,
     compile_info,
     compile_pdf,
     emit_generation_report,
+    extract_main_text,
     fetch,
     flatten_entries,
     load_bodies,
@@ -30,11 +32,20 @@ from cec2info import (
     parse_index,
     render_texinfo,
     run,
+    tex_section_command,
     validate_paragraph_indexes,
 )
 
 
 class ParseIndexTests(unittest.TestCase):
+    def test_missing_list_is_rejected(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "Aucune liste"):
+            parse_index(b"<html><body>Sommaire absent</body></html>")
+
+    def test_suspiciously_small_index_is_rejected(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "anormalement petit"):
+            parse_index("<ul><li>Une seule entrée</li></ul>".encode())
+
     def test_transparent_nested_list_wrapper(self) -> None:
         data = b"""
         <html><body><ul>
@@ -68,8 +79,56 @@ class TexinfoConversionTests(unittest.TestCase):
         self.assertNotIn("@cindex 1\n", result)
         self.assertIn("1 P 3, 21", result)
 
+    def test_boilerplate_is_removed_from_main_text(self) -> None:
+        data = b"""
+        <html><body>
+          <div>IntraText - Lecture du texte<br>Pr\xc3\xa9c\xc3\xa9dent - Suivant</div>
+          <hr>
+          <div><h2>Titre utile</h2><p>1 Contenu principal.</p></div>
+          <hr>
+          <div>Copyright \xc2\xa9 Libreria Editrice Vaticana</div>
+        </body></html>
+        """
+
+        text = extract_main_text(data)
+
+        self.assertIn("1 Contenu principal.", text)
+        self.assertNotIn("IntraText", text)
+        self.assertNotIn("Copyright", text)
+
+    def test_repeated_heading_is_limited_to_info_output(self) -> None:
+        result = body_to_texinfo(
+            "ARTICLE 1\n\n1 Texte avec @ et {accolades}.",
+            ["ARTICLE 1"],
+        )
+
+        self.assertIn("@ifinfo\nARTICLE 1\n@end ifinfo", result)
+        self.assertIn("Texte avec @@ et @{accolades@}", result)
+
+    def test_semantic_levels_do_not_skip_texinfo_levels(self) -> None:
+        part = Entry(title="PREMIERE PARTIE", href=None, depth=1)
+        section = Entry(
+            title="PREMIERE SECTION",
+            href=None,
+            depth=2,
+            parent=part,
+        )
+        article = Entry(title="ARTICLE 1", href=None, depth=3, parent=section)
+
+        self.assertTrue(tex_section_command(part).startswith("@unnumbered"))
+        self.assertTrue(tex_section_command(section).startswith("@chapter"))
+        self.assertTrue(tex_section_command(article).startswith("@section"))
+
 
 class NavigationAndValidationTests(unittest.TestCase):
+    def test_clean_page_url_rejects_non_reading_page(self) -> None:
+        index = "https://example.test/book/_INDEX.HTM"
+        self.assertEqual(
+            clean_page_url(index, "_P12.HTM"),
+            "https://example.test/book/__P12.HTM",
+        )
+        self.assertIsNone(clean_page_url(index, "notes.html"))
+
     def test_next_page_url_finds_orphan_page(self) -> None:
         data = '<a href="__P15.HTM">Suivant</a>'.encode()
         self.assertEqual(
@@ -419,6 +478,22 @@ class FormatCompilationTests(unittest.TestCase):
                     if name.endswith(".xhtml")
                 )
             self.assertIn(b"Texte de validation", xhtml)
+
+
+class MissingToolTests(unittest.TestCase):
+    def test_compilers_report_missing_system_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            texi_path = base / "test.texi"
+            texi_path.write_text("@bye\n", encoding="utf-8")
+
+            with patch("cec2info.shutil.which", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "makeinfo"):
+                    compile_info(texi_path, base / "test.info")
+                with self.assertRaisesRegex(RuntimeError, "texi2dvi"):
+                    compile_pdf(texi_path, base / "test.pdf")
+                with self.assertRaisesRegex(RuntimeError, "makeinfo"):
+                    compile_epub(texi_path, base / "test.epub")
 
 
 if __name__ == "__main__":
